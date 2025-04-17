@@ -4,6 +4,7 @@
 #include "pldm_fru_cmd.hpp"
 #include "pldm_fw_update_cmd.hpp"
 #include "pldm_platform_cmd.hpp"
+#include "pldm_rde_cmd.hpp"
 #include "pldmtool/oem/ibm/pldm_oem_ibm.hpp"
 
 #include <CLI/CLI.hpp>
@@ -128,6 +129,7 @@ int main(int argc, char** argv)
     pldmtool::platform::registerCommand(app);
     pldmtool::fru::registerCommand(app);
     pldmtool::fw_update::registerCommand(app);
+    pldmtool::rde::registerCommand(app);
 
 #ifdef OEM_IBM
     pldmtool::oem_ibm::registerCommand(app);
