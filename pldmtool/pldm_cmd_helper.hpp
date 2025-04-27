@@ -11,6 +11,10 @@
 #include <libpldm/platform.h>
 #include <libpldm/rde.h>
 #include <libpldm/smbios.h>
+#include <linux/mctp.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -74,16 +78,18 @@ void fillCompletionCode(uint8_t completionCode, ordered_json& data,
 
 /** @brief MCTP socket read/receive
  *
+ *  @param[in]  eid - mctp endpoint id
+ *  @mctpPreAllocTag - bool to indicate request for preallocated tag
  *  @param[in]  requestMsg - Request message to compare against loopback
  *              message received from mctp socket
  *  @param[out] responseMsg - Response buffer received from mctp socket
- *  @param[in]  pldmVerbose - verbosity flag - true/false
  *
  *  @return -   0 on success.
  *             -1 or -errno on failure.
  */
-int mctpSockSendRecv(const std::vector<uint8_t>& requestMsg,
-                     std::vector<uint8_t>& responseMsg, bool pldmVerbose);
+int mctpSockSendRecv(const uint8_t eid, const bool mctpPreAllocTag,
+                     const std::vector<uint8_t>& requestMsg,
+                     void** responseMessage, size_t* responseMessageSize);
 
 class CommandInterface
 {
@@ -152,6 +158,7 @@ class CommandInterface
     uint8_t instanceId;
     pldm::InstanceIdDb instanceIdDb;
     uint8_t numRetries = 0;
+    bool mctpPreAllocTag = false;
 };
 
 } // namespace helper
