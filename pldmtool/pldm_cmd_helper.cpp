@@ -118,8 +118,9 @@ int mctpSockSendRecv(const uint8_t eid, const bool mctpPreAllocTag,
     if (rc < 0)
     {
         rc = -errno;
-        std::cerr << "Kernel does not support MCTP extended addressing. errnostr = "
-                  << strerror(errno) << "\n";
+        std::cerr
+            << "Kernel does not support MCTP extended addressing. errnostr = "
+            << strerror(errno) << "\n";
         close(sd);
         return rc;
     }
@@ -168,8 +169,7 @@ int mctpSockSendRecv(const uint8_t eid, const bool mctpPreAllocTag,
     if (rc < 0)
     {
         std::cerr << "poll(AF_MCTP, 5000) failed. errnostr = "
-                  << strerror(errno)
-                  << "\n";
+                  << strerror(errno) << "\n";
         close(sd);
         return rc;
     }
@@ -287,13 +287,13 @@ int CommandInterface::pldmSendRecv(std::vector<uint8_t>& requestMsg,
 
         if (CommandInterface::pldmType != "mctpRaw")
         {
-            rc =
-                pldmTransport.sendRecvMsg(tid, requestMsg.data(), requestMsg.size(),
-                                          responseMessage, responseMessageSize);
+            rc = pldmTransport.sendRecvMsg(tid, requestMsg.data(),
+                                           requestMsg.size(), responseMessage,
+                                           responseMessageSize);
             if (rc)
             {
-                std::cerr << "[" << unsigned(retry) << "] pldm_send_recv error rc "
-                          << rc << std::endl;
+                std::cerr << "[" << unsigned(retry)
+                          << "] pldm_send_recv error rc " << rc << std::endl;
                 retry++;
                 continue;
             }

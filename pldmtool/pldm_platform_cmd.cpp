@@ -551,6 +551,7 @@ class GetPDR : public CommandInterface
         {PLDM_EFFECTER_OEM_SEMANTIC_PDR, "Effecter OEM Semantic PDR"},
         {PLDM_PDR_ENTITY_ASSOCIATION, "Entity Association PDR"},
         {PLDM_ENTITY_AUXILIARY_NAMES_PDR, "Entity Auxiliary Names PDR"},
+        {PLDM_REDFISH_RESOURCE_PDR, "Redfish Resource PDR"},
         {PLDM_OEM_ENTITY_ID_PDR, "OEM Entity ID PDR"},
         {PLDM_INTERRUPT_ASSOCIATION_PDR, "Interrupt Association PDR"},
         {PLDM_EVENT_LOG_PDR, "PLDM Event Log PDR"},
@@ -658,6 +659,7 @@ class GetPDR : public CommandInterface
         {"stateeffecter", PLDM_STATE_EFFECTER_PDR},
         {"entityassociation", PLDM_PDR_ENTITY_ASSOCIATION},
         {"frurecord", PLDM_PDR_FRU_RECORD_SET},
+        {"redfishresource", PLDM_REDFISH_RESOURCE_PDR},
         // Add other types
     };
 
@@ -1491,6 +1493,92 @@ class GetPDR : public CommandInterface
         }
     }
 
+    std::string getRedfishResourceName(uint8_t* ptr, size_t length)
+    {
+        // Remove null terminator if present
+        if (length > 0 && ptr[length - 1] == '\0')
+        {
+            --length;
+        }
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        return std::string(reinterpret_cast<const char*>(ptr), length);
+    }
+
+    std::string getMajorSchemaVersion(ver32_t version)
+    {
+        char version_buffer[1024] = {0};
+        int rc = 0;
+
+        if (version.alpha == 0xFF && version.update == 0xFF &&
+            version.minor == 0xFF && version.major == 0xFF)
+            return std::string("?.?");
+        else
+        {
+            rc = ver2str(&version, version_buffer, sizeof(version_buffer));
+        }
+        return std::string(version_buffer, rc);
+    }
+
+    void printRedfishResourcePDR(const uint8_t* data,
+                                 const uint16_t data_length,
+                                 ordered_json& output)
+    {
+        struct pldm_redfish_resource_pdr pdr;
+        int rc =
+            decode_redfish_resource_pdr_data(data, (size_t)data_length, &pdr);
+        if (rc != PLDM_SUCCESS)
+        {
+            std::cerr << "Failed to get redfish resource PDR" << std::endl;
+            return;
+        }
+
+        output["ResourceID"] = pdr.resource_id;
+        output["ResourceFlags"] = pdr.resource_flags.byte;
+        output["ContainingResourceID"] = pdr.cont_resrc_id;
+        output["ProposedContainingResourceLengthBytes"] =
+            pdr.prop_cont_resrc.length;
+        output["ProposedContainingResourceName"] = getRedfishResourceName(
+            pdr.prop_cont_resrc.name, pdr.prop_cont_resrc.length);
+        output["SubURILengthBytes"] = pdr.sub_uri.length;
+        output["SubURI"] =
+            getRedfishResourceName(pdr.sub_uri.name, pdr.sub_uri.length);
+        output["AdditionalResourceIDCount"] = pdr.add_resrc_id_count;
+
+        for (size_t i = 0; i < pdr.add_resrc_id_count; i++)
+        {
+            output.emplace("AdditionalResourceID[" + std::to_string(i) + "]",
+                           pdr.add_rsrc_child[i]->add_resrc_id);
+            output.emplace("AdditionalResourceSubURILengthBytes[" +
+                               std::to_string(i) + "]",
+                           pdr.add_rsrc_child[i]->add_resrc.length);
+            output.emplace(
+                "AdditionalResourceSubURI[" + std::to_string(i) + "]",
+                getRedfishResourceName(
+                    pdr.add_rsrc_child[i]->add_resrc.name,
+                    pdr.add_rsrc_child[i]->add_resrc.length));
+        }
+
+        output["MajorSchemaVersion"] =
+            getMajorSchemaVersion(pdr.major_schema_version);
+        output["MajorSchemaDictionaryLengthBytes"] =
+            pdr.major_schema_dict_length_bytes;
+        output["MajorSchemaDictionarySignature"] =
+            pdr.major_schema_dict_signature;
+        output["MajorSchemaNameLength"] = pdr.major_schema.length;
+        output["MajorSchemaName"] = getRedfishResourceName(
+            pdr.major_schema.name, pdr.major_schema.length);
+        output["OEMCount"] = pdr.oem_count;
+
+        for (size_t i = 0; i < pdr.oem_count; i++)
+        {
+            output.emplace("OEMNameLengthBytes[" + std::to_string(i) + "]",
+                           pdr.oem_list[i]->length);
+            output.emplace("OEMName[" + std::to_string(i) + "]",
+                           getRedfishResourceName(pdr.oem_list[i]->name,
+                                                  pdr.oem_list[i]->length));
+        }
+    }
+
     void printPDRMsg(uint32_t& nextRecordHndl, const uint16_t respCnt,
                      uint8_t* data, std::optional<uint16_t> terminusHandle)
     {
@@ -1574,6 +1662,8 @@ class GetPDR : public CommandInterface
             case PLDM_COMPACT_NUMERIC_SENSOR_PDR:
                 printCompactNumericSensorPDR(data, output);
                 break;
+            case PLDM_REDFISH_RESOURCE_PDR:
+                printRedfishResourcePDR(data, respCnt, output);
             default:
                 break;
         }
