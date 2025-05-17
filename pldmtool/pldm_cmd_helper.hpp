@@ -78,6 +78,7 @@ void fillCompletionCode(uint8_t completionCode, ordered_json& data,
 
 /** @brief MCTP socket read/receive
  *
+ *  @param[in]  mctpNetworkId - mctp network id
  *  @param[in]  eid - mctp endpoint id
  *  @mctpPreAllocTag - bool to indicate request for preallocated tag
  *  @param[in]  requestMsg - Request message to compare against loopback
@@ -87,7 +88,8 @@ void fillCompletionCode(uint8_t completionCode, ordered_json& data,
  *  @return -   0 on success.
  *             -1 or -errno on failure.
  */
-int mctpSockSendRecv(const uint8_t eid, const bool mctpPreAllocTag,
+int mctpSockSendRecv(const uint8_t mctpNetworkId, const uint8_t eid,
+                     const bool mctpPreAllocTag,
                      const std::vector<uint8_t>& requestMsg,
                      void** responseMessage, size_t* responseMessageSize);
 
@@ -159,6 +161,7 @@ class CommandInterface
     pldm::InstanceIdDb instanceIdDb;
     uint8_t numRetries = 0;
     bool mctpPreAllocTag = false;
+    uint8_t mctpNetworkId = 1;
 };
 
 } // namespace helper
