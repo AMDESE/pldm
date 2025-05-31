@@ -12,7 +12,6 @@
 #include <libpldm/rde.h>
 #include <libpldm/smbios.h>
 #include <linux/mctp.h>
-#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/poll.h>
 #include <sys/socket.h>
