@@ -1,0 +1,11 @@
+{
+    "Resources": {
+        "200": {
+            "ProposedContainingResourceName": "Processor",
+            "SubURI": "oem/amd/RDE/AmdSocConfiguration",
+            "MajorSchemaName": "Processor",
+            "MajorSchemaVersion": "1.1",
+            "OEMExtensions": ["OEM/VendorA", "OEM/VendorB"]
+        }
+    }
+}

@@ -257,6 +257,8 @@ executable(
     'platform-mc/numeric_sensor.cpp',
     'platform-mc/event_manager.cpp',
     'platform-mc/dbus_to_terminus_effecters.cpp',
+    'rde/redfish_resource_manager.cpp',
+    'rde/redfish_resource_pdr_view.cpp',
     oem_files,
     'requester/mctp_endpoint_discovery.cpp',
     implicit_include_directories: false,
@@ -299,5 +301,6 @@ if get_option('tests').allowed()
     subdir('host-bmc/test')
     subdir('requester/test')
     subdir('platform-mc/test')
+    subdir('rde/test')
     subdir('test')
 endif
