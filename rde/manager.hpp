@@ -1,5 +1,6 @@
 #pragma once
 
+#include "device.hpp"
 #include "requester/handler.hpp"
 #include "requester/mctp_endpoint_discovery.hpp"
 #include "xyz/openbmc_project/RDE/Manager/server.hpp"
@@ -44,7 +45,7 @@ struct DeviceContext
     std::string deviceId;     // External device identifier (e.g., from D-Bus)
     uint8_t tid;              // Terminus ID used in PLDM stack
     std::string friendlyName; // Human-readable name for the device
-    std::shared_ptr<void*> devicePtr; // Pointer to associated device object
+    std::shared_ptr<Device> devicePtr; // Pointer to associated device object
 };
 
 /**

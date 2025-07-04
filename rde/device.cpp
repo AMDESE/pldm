@@ -30,6 +30,11 @@ Device::~Device()
 
 void Device::refreshDeviceInfo()
 {
+    session_ = std::make_unique<DiscoverySession>(*this);
+
+    info("Discovery is in progress");
+    session_->doNegotiateRedfish();
+
     // Placeholder for actual refresh logic
     std::map<std::string,
              std::variant<std::string, uint16_t, uint32_t, uint8_t>>
@@ -76,41 +81,53 @@ MetadataVariant Device::getMetadataField(const std::string& key) const
         return metaData_.devFeatureSupport;
     if (key == "devCapabilities")
         return metaData_.devCapabilities;
-    else
-        throw std::invalid_argument("Unknown metadata key: " + key);
+    return std::string{};
 }
 
 void Device::setMetadataField(const std::string& key,
                               const MetadataVariant& value)
 {
-    if (key == "devProviderName")
-        metaData_.devProviderName = std::get<std::string>(value);
-    else if (key == "etag")
-        metaData_.etag = std::get<std::string>(value);
-    else if (key == "devConfigSignature")
-        metaData_.devConfigSignature = std::get<uint32_t>(value);
-    else if (key == "mcMaxTransferChunkSizeBytes")
-        metaData_.mcMaxTransferChunkSizeBytes = std::get<uint32_t>(value);
-    else if (key == "devMaxTransferChunkSizeBytes")
-        metaData_.devMaxTransferChunkSizeBytes = std::get<uint32_t>(value);
-    else if (key == "deviceConcurrencySupport")
-        metaData_.deviceConcurrencySupport = std::get<uint8_t>(value);
-    else if (key == "mcConcurrencySupport")
-        metaData_.mcConcurrencySupport = std::get<uint8_t>(value);
-    else if (key == "protocolVersion")
-        metaData_.protocolVersion = std::get<std::string>(value);
-    else if (key == "encoding")
-        metaData_.encoding = std::get<std::string>(value);
-    else if (key == "sessionId")
-        metaData_.sessionId = std::get<std::string>(value);
-    else if (key == "mcFeatureSupport")
-        metaData_.mcFeatureSupport = std::get<FeatureSupport>(value);
-    else if (key == "devFeatureSupport")
-        metaData_.devFeatureSupport = std::get<FeatureSupport>(value);
-    else if (key == "devCapabilities")
-        metaData_.devCapabilities = std::get<DeviceCapabilities>(value);
-    else
-        throw std::invalid_argument("Unknown metadata key: " + key);
+    try
+    {
+        if (key == "devProviderName")
+            metaData_.devProviderName = std::get<std::string>(value);
+        else if (key == "etag")
+            metaData_.etag = std::get<std::string>(value);
+        else if (key == "devConfigSignature")
+            metaData_.devConfigSignature = std::get<uint32_t>(value);
+        else if (key == "mcMaxTransferChunkSizeBytes")
+            metaData_.mcMaxTransferChunkSizeBytes = std::get<uint32_t>(value);
+        else if (key == "devMaxTransferChunkSizeBytes")
+            metaData_.devMaxTransferChunkSizeBytes = std::get<uint32_t>(value);
+        else if (key == "deviceConcurrencySupport")
+            metaData_.deviceConcurrencySupport = std::get<uint8_t>(value);
+        else if (key == "mcConcurrencySupport")
+            metaData_.mcConcurrencySupport = std::get<uint8_t>(value);
+        else if (key == "protocolVersion")
+            metaData_.protocolVersion = std::get<std::string>(value);
+        else if (key == "encoding")
+            metaData_.encoding = std::get<std::string>(value);
+        else if (key == "sessionId")
+            metaData_.sessionId = std::get<std::string>(value);
+        else if (key == "mcFeatureSupport")
+            metaData_.mcFeatureSupport = std::get<FeatureSupport>(value);
+        else if (key == "devFeatureSupport")
+            metaData_.devFeatureSupport = std::get<FeatureSupport>(value);
+        else if (key == "devCapabilities")
+            metaData_.devCapabilities = std::get<DeviceCapabilities>(value);
+        else
+            error("Unknown metadata key:{KEY}", "KEY", key);
+    }
+    catch (const std::bad_variant_access& ex)
+    {
+        error("Metadata type mismatch for key {KEY}: {WHAT}", "KEY", key,
+              "WHAT", ex.what());
+    }
+    catch (const std::exception& ex)
+    {
+        error("Failed to set metadata key {KEY}: {WHAT}", "KEY", key, "WHAT",
+              ex.what());
+    }
 }
 
 DeviceState Device::getState() const

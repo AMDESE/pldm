@@ -28,13 +28,31 @@ void Manager::handleMctpEndpoints(const std::vector<MctpInfo>& mctpInfos)
         std::string path =
             std::string(DeviceObjectPath) + "/" + std::to_string(eid);
         std::string friendlyName = "Device_" + std::to_string(eid);
+        pldm::pdr::TerminusID tid =
+            0; // TODO: Improve TID resolution logic if needed
 
         info(
             "Registering device UUID:{UUID} EID:{EID} Path:{PATH}, Name:{NAME}",
             "UUID", uuid, "EID", static_cast<int>(eid), "PATH", path, "NAME",
             friendlyName);
 
-        // TODO: Implement Discovery logic here.
+        // Create Device instance
+        auto devicePtr = std::make_shared<Device>(bus_, path, instanceIdDb_,
+                                                  handler_, eid, tid, uuid);
+
+        // Populate context with smart pointer to ensure persistence
+        DeviceContext context;
+        context.uuid = uuid;
+        context.eid = eid;
+        context.deviceId = std::to_string(eid); // External identifier
+        context.tid = tid;
+        context.friendlyName = friendlyName;
+        context.devicePtr = devicePtr;
+
+        // Store in eid map to retain lifetime
+        eidMap_[eid] = std::move(context);
+
+        // Continue loop to register all endpoints
     }
 }
 

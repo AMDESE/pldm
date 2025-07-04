@@ -1,6 +1,7 @@
 #pragma once
 
 #include "device_common.hpp"
+#include "discov_session.hpp"
 #include "xyz/openbmc_project/RDE/Device/server.hpp"
 
 #include <common/instance_id.hpp>
@@ -123,6 +124,15 @@ class Device :
     }
 
     /**
+     * @brief Returns Terminus ID (TID).
+     * @return 8-bit unsigned integer TID value
+     */
+    inline uint8_t getTid() const
+    {
+        return tid_;
+    }
+
+    /**
      * @brief Attempts to update the device state.
      * @param newState The desired DeviceState.
      */
@@ -138,9 +148,10 @@ class Device :
     pldm::InstanceIdDb* instanceIdDb_ = nullptr;
     pldm::requester::Handler<pldm::requester::Request>* handler_ = nullptr;
     uint8_t eid_;
-    [[maybe_unused]] uint8_t tid_;
+    uint8_t tid_;
     std::string uuid_;
     DeviceState currentState_;
+    std::unique_ptr<DiscoverySession> session_;
 };
 
 } // namespace pldm::rde
