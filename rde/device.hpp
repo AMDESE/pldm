@@ -2,6 +2,7 @@
 
 #include "device_common.hpp"
 #include "discov_session.hpp"
+#include "resource_registry.hpp"
 #include "xyz/openbmc_project/RDE/Device/server.hpp"
 
 #include <common/instance_id.hpp>
@@ -157,6 +158,7 @@ class Device :
     std::vector<std::vector<uint8_t>> pdrPayloads_;
     DeviceState currentState_;
     std::unique_ptr<DiscoverySession> session_;
+    std::unique_ptr<ResourceRegistry> resourceRegistry_;
 };
 
 } // namespace pldm::rde

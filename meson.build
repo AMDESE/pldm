@@ -260,6 +260,7 @@ executable(
     'rde/device.cpp',
     'rde/discov_session.cpp',
     'rde/manager.cpp',
+    'rde/resource_registry.cpp',
     oem_files,
     'requester/mctp_endpoint_discovery.cpp',
     implicit_include_directories: false,

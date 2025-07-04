@@ -31,6 +31,9 @@ Device::~Device()
 
 void Device::refreshDeviceInfo()
 {
+    resourceRegistry_ = std::make_unique<ResourceRegistry>();
+    resourceRegistry_->loadFromResourcePDR(pdrPayloads_);
+
     session_ = std::make_unique<DiscoverySession>(*this);
 
     info("Discovery is in progress");
