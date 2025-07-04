@@ -258,6 +258,7 @@ executable(
     'platform-mc/event_manager.cpp',
     'platform-mc/dbus_to_terminus_effecters.cpp',
     'rde/device.cpp',
+    'rde/dictionary.cpp',
     'rde/discov_session.cpp',
     'rde/manager.cpp',
     'rde/resource_registry.cpp',
