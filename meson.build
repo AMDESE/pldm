@@ -259,6 +259,7 @@ executable(
     'platform-mc/dbus_to_terminus_effecters.cpp',
     'rde/device.cpp',
     'rde/dictionary.cpp',
+    'rde/dictionary_manager.cpp',
     'rde/discov_session.cpp',
     'rde/manager.cpp',
     'rde/resource_registry.cpp',
