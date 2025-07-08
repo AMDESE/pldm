@@ -2,6 +2,10 @@
 
 #include "common/types.hpp"
 
+#include <sdbusplus/bus/match.hpp>
+#include <sdbusplus/message.hpp>
+#include <xyz/openbmc_project/PLDM/Event/server.hpp>
+
 #include <future>
 #include <iostream>
 
@@ -21,39 +25,75 @@ void Manager::handleMctpEndpoints(const std::vector<MctpInfo>& mctpInfos)
 {
     for (const auto& mctpInfo : mctpInfos)
     {
-        const auto& eid = std::get<0>(mctpInfo);
-        const auto& uuid = std::get<1>(mctpInfo);
+        const uint8_t eid = std::get<0>(mctpInfo);
+        const std::string& uuid = std::get<1>(mctpInfo);
 
-        // Construct D-Bus path using EID (safe for object path)
-        std::string path =
-            std::string(DeviceObjectPath) + "/" + std::to_string(eid);
-        std::string friendlyName = "Device_" + std::to_string(eid);
-        pldm::pdr::TerminusID tid =
-            0; // TODO: Improve TID resolution logic if needed
+        info("Registering device UUID:{UUID} EID:{EID} ", "UUID", uuid, "EID",
+             static_cast<int>(eid));
 
-        info(
-            "Registering device UUID:{UUID} EID:{EID} Path:{PATH}, Name:{NAME}",
-            "UUID", uuid, "EID", static_cast<int>(eid), "PATH", path, "NAME",
-            friendlyName);
+        // Skip if already registered
+        if (signalMatches_.count(eid))
+            continue;
 
-        // Create Device instance
-        auto devicePtr = std::make_shared<Device>(bus_, path, instanceIdDb_,
-                                                  handler_, eid, tid, uuid);
+        auto match = std::make_unique<sdbusplus::bus::match_t>(
+            bus_,
+            sdbusplus::bus::match::rules::type::signal() +
+                sdbusplus::bus::match::rules::member("DiscoveryComplete") +
+                sdbusplus::bus::match::rules::interface(
+                    "xyz.openbmc_project.PLDM.Event") +
+                sdbusplus::bus::match::rules::path("/xyz/openbmc_project/pldm"),
+            [this, eid, uuid](sdbusplus::message::message& msg) {
+                uint8_t signalTid = 0;
 
-        // Populate context with smart pointer to ensure persistence
-        DeviceContext context;
-        context.uuid = uuid;
-        context.eid = eid;
-        context.deviceId = std::to_string(eid); // External identifier
-        context.tid = tid;
-        context.friendlyName = friendlyName;
-        context.devicePtr = devicePtr;
+                msg.read(signalTid);
 
-        // Store in eid map to retain lifetime
-        eidMap_[eid] = std::move(context);
+                // Avoid duplicate registration
+                if (!eidMap_.count(eid))
+                {
+                    this->createDeviceDbusObject(eid, uuid, signalTid);
+                }
 
-        // Continue loop to register all endpoints
+                // Optional: remove match after use
+                signalMatches_.erase(eid);
+            });
+
+        signalMatches_[eid] = std::move(match);
     }
+}
+
+void Manager::createDeviceDbusObject(uint8_t eid, const std::string& uuid,
+                                     pldm_tid_t tid)
+{
+    // Prevent duplicate creation for the same EID
+    if (eidMap_.count(eid))
+    {
+        info("Device for EID already exists. Skipping registration.");
+        return;
+    }
+
+    std::string path =
+        std::string(DeviceObjectPath) + "/" + std::to_string(eid);
+    std::string friendlyName = "Device_" + std::to_string(eid);
+
+    // Create base device
+    auto devicePtr = std::make_shared<Device>(bus_, path, instanceIdDb_,
+                                              handler_, eid, tid, uuid);
+
+    DeviceContext context;
+    context.uuid = uuid;
+    context.eid = eid;
+    context.tid = tid;
+    context.deviceId = std::to_string(eid);
+    context.friendlyName = friendlyName;
+    context.devicePtr = devicePtr;
+
+    info("RDE device created UUID:{UUID} EID:{EID} Path:{PATH}, Name:{NAME}",
+         "UUID", uuid, "EID", static_cast<int>(eid), "PATH", path, "NAME",
+         friendlyName);
+
+    eidMap_[eid] = std::move(context);
+
+    devicePtr->refreshDeviceInfo();
 }
 
 DeviceContext* Manager::getDeviceContext(uint8_t eid)

@@ -508,6 +508,22 @@ int emitStateSensorEventSignal(uint8_t tid, uint16_t sensorId,
                                uint8_t previousEventState);
 
 /**
+ * @brief Emits a PLDM DiscoveryComplete D-Bus signal.
+ *
+ * This function sends a D-Bus signal indicating that the PLDM discovery
+ * process has completed. It includes the terminus ID (TID) of the signal
+ * payload.
+ *
+ * @param[in] tid  The terminus ID of the PLDM device.
+ *
+ * @return int Returns PLDM_SUCCESS on success, or PLDM_ERROR on failure.
+ *
+ * @exception Logs an error message if the signal emission fails due to an
+ * exception.
+ */
+int emitDiscoveryCompleteSignal(uint8_t tid);
+
+/**
  *  @brief call Recover() method to recover an MCTP Endpoint
  *  @param[in] MCTP Endpoint's object path
  */

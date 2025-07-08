@@ -544,6 +544,28 @@ int emitStateSensorEventSignal(uint8_t tid, uint16_t sensorId,
     return PLDM_SUCCESS;
 }
 
+int emitDiscoveryCompleteSignal(uint8_t tid)
+{
+    try
+    {
+        auto& bus = DBusHandler::getBus();
+        auto msg = bus.new_signal("/xyz/openbmc_project/pldm",
+                                  "xyz.openbmc_project.PLDM.Event",
+                                  "DiscoveryComplete");
+
+        msg.append(tid);
+        msg.signal_send();
+    }
+    catch (const std::exception& e)
+    {
+        error("Failed to emit PLDM DiscoveryComplete signal, error - {ERROR}",
+              "ERROR", e);
+        return PLDM_ERROR;
+    }
+
+    return PLDM_SUCCESS;
+}
+
 void recoverMctpEndpoint(const std::string& endpointObjPath)
 {
     auto& bus = DBusHandler::getBus();

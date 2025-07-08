@@ -215,11 +215,28 @@ class Manager :
         return std::nullopt;
     }
 
+    /**
+     * @brief Create a device D-Bus object associated with PLDM discovery.
+     *
+     * This method initializes and registers a D-Bus object representing a
+     * discovered device, using its endpoint ID (EID), unique identifier (UUID),
+     * and type identifier (TID). It is typically invoked during the PLDM
+     * discovery session as part of Redfish Device Enablement.
+     *
+     * @param eid   Endpoint ID of the device as reported during MCTP discovery.
+     * @param uuid  Unique identifier string for the device.
+     * @param tid   Type ID of the device (PLDM Terminus ID).
+     */
+    void createDeviceDbusObject(uint8_t eid, const std::string& uuid,
+                                pldm_tid_t tid);
+
   private:
     pldm::InstanceIdDb* instanceIdDb_ = nullptr;
     pldm::requester::Handler<pldm::requester::Request>* handler_ = nullptr;
     sdbusplus::bus::bus& bus_;
     std::unordered_map<uint8_t, DeviceContext> eidMap_;
+    std::unordered_map<uint8_t, std::unique_ptr<sdbusplus::bus::match_t>>
+        signalMatches_;
 };
 
 } // namespace pldm::rde
