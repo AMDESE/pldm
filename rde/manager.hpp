@@ -22,6 +22,8 @@ inline constexpr std::string_view RDEManagerObjectPath{
 inline constexpr std::string_view DeviceObjectPath{
     "/xyz/openbmc_project/RDE/Device"};
 
+using ObjectPath = sdbusplus::message::object_path;
+
 /**
  * @struct DeviceContext
  * @brief Represents a Redfish Device Enablement (RDE)-capable device.
@@ -33,7 +35,6 @@ inline constexpr std::string_view DeviceObjectPath{
  * ### Assumptions and Mapping:
  * - `uuid`: Globally unique identifier used during internal registration.
  * - `eid`: MCTP Endpoint ID, used internally in the PLDM stack.
- * - `deviceId`: External string identifier (e.g., from D-Bus), mapped to `eid`.
  * - `tid`: Terminus ID used in PLDM stack, represented as a byte.
  * - `friendlyName`: Human-readable name for UI or logs.
  * - `devicePtr`: Pointer to the actual device object.
@@ -42,7 +43,6 @@ struct DeviceContext
 {
     std::string uuid;         // Unique device UUID (internal registration)
     uint8_t eid;              // MCTP Endpoint ID (internal PLDM stack)
-    std::string deviceId;     // External device identifier (e.g., from D-Bus)
     uint8_t tid;              // Terminus ID used in PLDM stack
     std::string friendlyName; // Human-readable name for the device
     std::shared_ptr<Device> devicePtr; // Pointer to associated device object
@@ -138,44 +138,65 @@ class Manager :
     DeviceContext* getDeviceContext(uint8_t eid);
 
     /**
-     * @brief Perform a Redfish operation on a target device.
+     * @brief Implementation for StartRedfishOperation
+     * Begin execution of a Redfish operation on the target device. Returns a
+     * D-Bus object path for tracking asynchronous progress through an
+     * OperationTask instance.
      *
-     * @param[in] requestId      Unique request identifier.
-     * @param[in] operationId    Type of Redfish operation.
-     * @param[in] targetURI      URI of the Redfish resource.
-     * @param[in] deviceId       Identifier of the target device.
-     * @param[in] payload        Request payload.
-     * @param[in] payloadFormat  Format of the payload.
-     * @param[in] encodingType   Encoding type of the payload.
-     * @param[in] sessionId      Session identifier.
-     * @return Tuple containing response payload and HTTP status code.
+     * @param[in] operationID - Unique identifier for this operation lifecycle.
+     *            This ID must be supplied by the caller and reused for any
+     *            related commands (e.g., cancellation, polling). Enables
+     *            multi-phase tracking and client-side logical correlation.
+     * @param[in] operationType - Type of Redfish operation to perform.
+     * @param[in] targetURI - URI of the target Redfish resource or action.
+     * @param[in] deviceUUID - Uniquely identifies the target device instance.
+     * @param[in] eid - Optional endpoint identifier for MCTP or similar
+     *            transport. Omit for protocols that do not use EID or when
+     *            resolved internally.
+     * @param[in] payload - Redfish payload content, either embedded inline as
+     *            a JSON/BEJ string, or provided as an external file path
+     *            reference.
+     * @param[in] payloadFormat - Specifies whether the payload is embedded
+     *            inline or referenced via external file path.
+     * @param[in] encodingFormat - Encoding format of the payload. Choose
+     * 'JSON' for plain text or 'BEJ' for compact binary. JSON is the default
+     * for broader compatibility.
+     * @param[in] sessionId - Optional grouping label used to associate
+     * multiple operations under a logical client session. Useful for
+     * long-running tasks, audit logging, or correlation across coordinated
+     * workflows.
+     *
+     * @return path[sdbusplus::message::object_path] - D-Bus object path for
+     *         the xyz.openbmc_project.RDE.OperationTask created for this
+     *         operation. This object allows clients to monitor execution
+     *         progress, retrieve response metadata, and manage task lifecycle.
      */
-    std::tuple<std::string, uint16_t> performRedfishOperation(
-        uint32_t requestId,
+    ObjectPath startRedfishOperation(
+        uint32_t operationID,
         sdbusplus::common::xyz::openbmc_project::rde::Common::OperationType
-            operationId,
-        std::string targetURI, std::string deviceId, std::string payload,
-        PayloadFormatType payloadFormat, std::string encodingType,
-        std::string sessionId) override;
+            operationType,
+        std::string targetURI, std::string deviceUUID, uint8_t eid,
+        std::string payload, PayloadFormatType payloadFormat,
+        EncodingFormatType encodingFormat, std::string sessionId) override;
 
     /**
      * @brief Get schema information for a specific device.
      *
-     * @param[in] deviceId  Identifier of the device.
+     * @param[in] deviceUUID  Identifier of the device.
      * @return Vector of key-value maps representing schema information.
      */
     std::vector<std::map<std::string, std::string>> getDeviceSchemaInfo(
-        std::string deviceId) override;
+        std::string deviceUUID) override;
 
     /**
      * @brief Get supported Redfish operations for a specific device.
      *
-     * @param[in] deviceId  Identifier of the device.
+     * @param[in] deviceUUID  Identifier of the device.
      * @return Vector of supported operation types.
      */
     std::vector<
         sdbusplus::common::xyz::openbmc_project::rde::Common::OperationType>
-        getSupportedOperations(std::string deviceId) override;
+        getSupportedOperations(std::string deviceUUID) override;
 
     /** @brief Helper function to invoke registered handlers for
      *         the added MCTP endpoints

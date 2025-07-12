@@ -83,7 +83,6 @@ void Manager::createDeviceDbusObject(uint8_t eid, const std::string& uuid,
     context.uuid = uuid;
     context.eid = eid;
     context.tid = tid;
-    context.deviceId = std::to_string(eid);
     context.friendlyName = friendlyName;
     context.devicePtr = devicePtr;
 
@@ -106,27 +105,28 @@ DeviceContext* Manager::getDeviceContext(uint8_t eid)
     return nullptr;
 }
 
-std::tuple<std::string, uint16_t> Manager::performRedfishOperation(
-    uint32_t /*requestId*/,
+ObjectPath Manager::startRedfishOperation(
+    uint32_t /*operationID*/,
     sdbusplus::common::xyz::openbmc_project::rde::Common::OperationType
-    /*operationId*/,
-    std::string /*targetURI*/, std::string /*deviceId*/,
+    /*operationType*/,
+    std::string /*targetURI*/, std::string /*deviceUUID*/, uint8_t /*eid*/,
     std::string /*payload*/, PayloadFormatType /*payloadFormat*/,
-    std::string /*encodingType*/, std::string /*sessionId*/)
+    EncodingFormatType /*encodingFormat*/, std::string /*sessionId*/)
 {
     // TODO: Implement Redfish operation logic
-    return {"{}", 200};
+    ObjectPath objPath{"/xyz/openbmc_project/RDE/OperationTask/1"};
+    return objPath;
 }
 
 std::vector<std::map<std::string, std::string>> Manager::getDeviceSchemaInfo(
-    std::string /*deviceId*/)
+    std::string /*deviceUUID*/)
 {
     // TODO: Implement schema info retrieval
     return {};
 }
 
 std::vector<sdbusplus::common::xyz::openbmc_project::rde::Common::OperationType>
-    Manager::getSupportedOperations(std::string /*deviceId*/)
+    Manager::getSupportedOperations(std::string /*deviceUUID*/)
 {
     // TODO: Implement supported operations retrieval
     return {};

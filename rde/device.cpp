@@ -18,7 +18,7 @@ Device::Device(sdbusplus::bus::bus& bus, const std::string& path,
         "RDE : device Object creating device UUID:{UUID} EID:{EID} Path:{PATH}",
         "UUID", uuid, "EID", static_cast<int>(eid), "PATH", path);
 
-    this->id(uuid);
+    this->deviceUUID(uuid);
     this->name("Device_" + std::to_string(eid));
     this->negotiationStatus(NegotiationStatus::NotStarted);
 }
