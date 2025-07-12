@@ -1576,6 +1576,22 @@ class GetPDR : public CommandInterface
         free_redfish_action_pdr_data(&pdr);
     }
 
+    void writeJsonToFile(const ordered_json& j)
+    {
+        std::ofstream file("/tmp/redfish_resource_pdr_cache.json",
+                           std::ios::app);
+        if (!file.is_open())
+        {
+            std::cerr
+                << "Failed to open file for writing: /tmp/redfish_resource_pdr_cache.json"
+                << std::endl;
+            return;
+        }
+
+        file << j.dump(4); // Pretty print with 4-space indentation
+        file.close();
+    }
+
     void printRedfishResourcePDR(const uint8_t* data, const uint16_t dataLength,
                                  ordered_json& output)
     {
@@ -1728,6 +1744,7 @@ class GetPDR : public CommandInterface
                 break;
             case PLDM_REDFISH_RESOURCE_PDR:
                 printRedfishResourcePDR(data, respCnt, output);
+                writeJsonToFile(output);
                 break;
             case PLDM_REDFISH_ACTION_PDR:
                 printRedfishActionPDR(data, respCnt, output);

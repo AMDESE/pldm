@@ -20,7 +20,7 @@ namespace
 
 using namespace pldmtool::helper;
 using namespace pldm::utils;
-
+using json = nlohmann::json;
 std::vector<std::unique_ptr<CommandInterface>> commands;
 
 } // namespace
@@ -936,6 +936,298 @@ class RDEOperationEnumerate : public CommandInterface
     }
 };
 
+class OEMGetResourceInfo : public CommandInterface
+{
+  public:
+    ~OEMGetResourceInfo() = default;
+    OEMGetResourceInfo() = delete;
+    OEMGetResourceInfo(const OEMGetResourceInfo&) = delete;
+    OEMGetResourceInfo(OEMGetResourceInfo&&) = default;
+    OEMGetResourceInfo& operator=(const OEMGetResourceInfo&) = delete;
+    OEMGetResourceInfo& operator=(OEMGetResourceInfo&&) = delete;
+
+    using CommandInterface::CommandInterface;
+
+    explicit OEMGetResourceInfo(const char* type, const char* name,
+                                CLI::App* app) :
+        CommandInterface(type, name, app)
+    {
+        app->description(
+            "This command has dependency with rde type 22 PDR; Before running this command please run"
+            "'pldmtool platform GetPDR -m <eid> -t redfishresource'");
+    }
+
+    void printResourceInfoVect(const std::vector<ResourceInfo>& resourceList)
+    {
+        for (const auto& res : resourceList)
+        {
+            ordered_json output;
+            output["URI"] = res.uri;
+            output["SchemaClass"] = res.schemaClass;
+            output["SchemaName"] = res.schemaName;
+            output["SchemaVersion"] = res.schemaVersion;
+            output["Operations"] = res.operations;
+            output["ResourceID"] = res.resourceId;
+
+            pldmtool::helper::DisplayInJson(output);
+        }
+    }
+
+    void writeJsonArrayToFile(const std::vector<json>& jsonArray)
+    {
+        std::ofstream outFile(fileName);
+        if (!outFile.is_open())
+        {
+            std::cerr << "Failed to open output file: " << fileName
+                      << std::endl;
+            return;
+        }
+
+        outFile << json(jsonArray).dump(4); // Pretty print
+        outFile.close();
+    }
+
+    std::vector<json> parseJsonObjectsFromFile()
+    {
+        std::ifstream file(fileName);
+        if (!file.is_open())
+        {
+            std::cerr << "Failed to open file: " << fileName << std::endl;
+            return {};
+        }
+
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        std::string content = buffer.str();
+
+        std::vector<json> jsonObjects;
+        size_t pos = 0;
+
+        while ((pos = content.find('{')) != std::string::npos)
+        {
+            size_t end = content.find('}', pos);
+            if (end == std::string::npos)
+                break;
+
+            std::string objStr = content.substr(pos, end - pos + 1);
+            try
+            {
+                json obj = json::parse(objStr);
+                jsonObjects.push_back(obj);
+            }
+            catch (const json::parse_error& e)
+            {
+                std::cerr << "Skipping invalid JSON object: " << e.what()
+                          << std::endl;
+            }
+
+            content = content.substr(end + 1);
+        }
+
+        return jsonObjects;
+    }
+
+    std::vector<std::shared_ptr<pldm_redfish_resource_pdr>>
+        getResourcePdrsFromFile()
+    {
+        std::ifstream file(fileName);
+        json j;
+        file >> j;
+
+        std::vector<std::shared_ptr<pldm_redfish_resource_pdr>> pdrList;
+
+        for (const auto& item : j)
+        {
+            auto pdr = std::make_shared<pldm_redfish_resource_pdr>();
+
+            // Header
+            pdr->hdr.version = item["PDRHeaderVersion"];
+            pdr->hdr.type = 0x16; // Redfish Resource PDR(PDR type 22)
+            pdr->hdr.length = item["dataLength"];
+
+            // Basic fields
+            pdr->resource_id = item["ResourceID"];
+            pdr->resource_flags.byte = item["ResourceFlags"];
+            pdr->cont_resrc_id = item["ContainingResourceID"];
+
+            // ProposedContainingResourceName
+            std::string propName = item["ProposedContainingResourceName"];
+            pdr->prop_cont_resrc_length =
+                static_cast<uint16_t>(propName.size());
+            pdr->prop_cont_resrc_name = new uint8_t[propName.size()];
+            memcpy(pdr->prop_cont_resrc_name, propName.c_str(),
+                   propName.size());
+
+            // SubURI
+            std::string subUri = item["SubURI"];
+            pdr->sub_uri_length = static_cast<uint16_t>(subUri.size());
+            pdr->sub_uri_name = new uint8_t[subUri.size()];
+            memcpy(pdr->sub_uri_name, subUri.c_str(), subUri.size());
+
+            // Additional Resources
+            pdr->add_resrc_id_count = item["AdditionalResourceIDCount"];
+            if (pdr->add_resrc_id_count)
+            {
+                pdr->additional_resrc =
+                    new add_resrc_t*[pdr->add_resrc_id_count];
+            }
+            else
+            {
+                pdr->additional_resrc = nullptr;
+            }
+
+            for (uint16_t i = 0; i < pdr->add_resrc_id_count; ++i)
+            {
+                auto resrc = new add_resrc_t();
+                std::string idKey =
+                    "AdditionalResourceID[" + std::to_string(i) + "]";
+                std::string uriKey =
+                    "AdditionalResourceSubURI[" + std::to_string(i) + "]";
+
+                resrc->resrc_id = item[idKey];
+                std::string uri = item[uriKey];
+                resrc->length = static_cast<uint16_t>(uri.size());
+                resrc->name = new uint8_t[uri.size()];
+                memcpy(resrc->name, uri.c_str(), uri.size());
+
+                pdr->additional_resrc[i] = resrc;
+            }
+
+            // Schema Version
+            std::string version = item["MajorSchemaVersion"];
+            sscanf(version.c_str(), "%hhu.%hhu.%hhu",
+                   &pdr->major_schema_version.major,
+                   &pdr->major_schema_version.minor,
+                   &pdr->major_schema_version.update);
+            pdr->major_schema_version.alpha = 0;
+
+            pdr->major_schema_dict_length_bytes =
+                item["MajorSchemaDictionaryLengthBytes"];
+            pdr->major_schema_dict_signature =
+                item["MajorSchemaDictionarySignature"];
+
+            // Major Schema Name
+            std::string schemaName = item["MajorSchemaName"];
+            pdr->major_schema.length = schemaName.size();
+            pdr->major_schema.name = new uint8_t[schemaName.size()];
+            memcpy(pdr->major_schema.name, schemaName.c_str(),
+                   schemaName.size());
+
+            // OEM Info
+            pdr->oem_count = item["OEMCount"];
+            if (pdr->oem_count > 0)
+            {
+                pdr->oem_list = new oem_info_t*[pdr->oem_count];
+            }
+            else
+            {
+                pdr->oem_list = nullptr;
+            }
+            for (uint16_t i = 0; i < pdr->oem_count; ++i)
+            {
+                auto oem = new oem_info_t();
+                std::string oemKey = "OEMName[" + std::to_string(i) + "]";
+                std::string oemName = item[oemKey];
+                oem->length = static_cast<uint16_t>(oemName.size());
+                oem->name = new uint8_t[oemName.size()];
+                memcpy(oem->name, oemName.c_str(), oemName.size());
+                pdr->oem_list[i] = oem;
+            }
+
+            pdrList.push_back(pdr);
+        }
+
+        return pdrList;
+    }
+
+    void freePdr(std::shared_ptr<pldm_redfish_resource_pdr>& pdr)
+    {
+        if (!pdr)
+            return;
+
+        // Free ProposedContainingResourceName
+        delete[] pdr->prop_cont_resrc_name;
+        pdr->prop_cont_resrc_name = nullptr;
+
+        // Free SubURI
+        delete[] pdr->sub_uri_name;
+        pdr->sub_uri_name = nullptr;
+
+        // Free Additional Resources
+        if (pdr->additional_resrc)
+        {
+            for (uint16_t i = 0; i < pdr->add_resrc_id_count; ++i)
+            {
+                if (pdr->additional_resrc[i])
+                {
+                    delete[] pdr->additional_resrc[i]->name;
+                    delete pdr->additional_resrc[i];
+                }
+            }
+            delete[] pdr->additional_resrc;
+            pdr->additional_resrc = nullptr;
+        }
+
+        // Free Major Schema Name
+        delete[] pdr->major_schema.name;
+        pdr->major_schema.name = nullptr;
+
+        // Free OEM list if used
+        if (pdr->oem_list)
+        {
+            for (uint16_t i = 0; i < pdr->oem_count; ++i)
+            {
+                if (pdr->oem_list[i])
+                {
+                    delete[] pdr->oem_list[i]->name;
+                    delete pdr->oem_list[i];
+                }
+            }
+            delete[] pdr->oem_list;
+            pdr->oem_list = nullptr;
+        }
+    }
+
+    void freePdrList(
+        std::vector<std::shared_ptr<pldm_redfish_resource_pdr>>& pdrList)
+    {
+        for (auto& pdr : pdrList)
+        {
+            freePdr(pdr);
+        }
+        pdrList.clear();
+    }
+
+    std::pair<int, std::vector<uint8_t>> createRequestMsg() override
+    {
+        // Converting rde resource pdr cmd output to jason format and store to
+        // file.
+        std::vector<json> jsonObjects = parseJsonObjectsFromFile();
+        writeJsonArrayToFile(jsonObjects);
+
+        std::vector<std::shared_ptr<pldm_redfish_resource_pdr>> pdrList =
+            getResourcePdrsFromFile();
+
+        std::vector<ResourceInfo> resourceInfoVect =
+            parseRedfishResourcePDRs(pdrList);
+
+        printResourceInfoVect(resourceInfoVect);
+        freePdrList(pdrList);
+
+        return {PLDM_ERROR, {}};
+    }
+
+    void parseResponseMsg(pldm_msg* responsePtr, size_t payloadLength) override
+    {
+        (void)responsePtr;
+        (void)payloadLength;
+        // Function intentionally left blank
+    }
+
+  private:
+    std::string fileName = "/tmp/redfish_resource_pdr_cache.json";
+};
+
 void registerCommand(CLI::App& app)
 {
     auto rde = app.add_subcommand("rde", "rde type command");
@@ -999,6 +1291,11 @@ void registerCommand(CLI::App& app)
         rde->add_subcommand("RDEOperationEnumerate", "RDE Operation Enumerate");
     commands.push_back(std::make_unique<RDEOperationEnumerate>(
         "rde", "RDEOperationEnumerate", rdeOperationEnumerate));
+
+    auto oemGetResourceInfo =
+        rde->add_subcommand("OEMGetResourceInfo", "OEM Get Resource Info");
+    commands.push_back(std::make_unique<OEMGetResourceInfo>(
+        "rde", "OEMGetResourceInfo", oemGetResourceInfo));
 }
 
 } // namespace rde
