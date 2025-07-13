@@ -544,7 +544,8 @@ int emitStateSensorEventSignal(uint8_t tid, uint16_t sensorId,
     return PLDM_SUCCESS;
 }
 
-int emitDiscoveryCompleteSignal(uint8_t tid)
+int emitDiscoveryCompleteSignal(
+    uint8_t tid, const std::vector<std::vector<uint8_t>>& pdrPayloads)
 {
     try
     {
@@ -554,6 +555,7 @@ int emitDiscoveryCompleteSignal(uint8_t tid)
                                   "DiscoveryComplete");
 
         msg.append(tid);
+        msg.append(pdrPayloads);
         msg.signal_send();
     }
     catch (const std::exception& e)

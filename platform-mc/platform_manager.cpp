@@ -112,7 +112,12 @@ exec::task<int> PlatformManager::initTerminus()
         }
         terminus->initialized = true;
 
-        pldm::utils::emitDiscoveryCompleteSignal(tid);
+        const auto redfishResources = terminus->getRedfishResourcePdrsRaw();
+
+        if (!redfishResources.empty())
+        {
+            pldm::utils::emitDiscoveryCompleteSignal(tid, redfishResources);
+        }
 
         if (manager)
         {

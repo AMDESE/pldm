@@ -7,12 +7,13 @@ namespace pldm::rde
 Device::Device(sdbusplus::bus::bus& bus, const std::string& path,
                pldm::InstanceIdDb* instanceIdDb,
                pldm::requester::Handler<pldm::requester::Request>* handler,
-               const uint8_t eid, uint8_t tid, const std::string& uuid) :
+               const uint8_t eid, uint8_t tid, const std::string& uuid,
+               const std::vector<std::vector<uint8_t>>& pdrPayloads) :
     sdbusplus::server::object::object<
         sdbusplus::xyz::openbmc_project::RDE::server::Device>(
         bus, path.c_str()),
     instanceIdDb_(instanceIdDb), handler_(handler), eid_(eid), tid_(tid),
-    uuid_(uuid), currentState_(DeviceState::NotReady)
+    uuid_(uuid), pdrPayloads_(pdrPayloads), currentState_(DeviceState::NotReady)
 {
     info(
         "RDE : device Object creating device UUID:{UUID} EID:{EID} Path:{PATH}",

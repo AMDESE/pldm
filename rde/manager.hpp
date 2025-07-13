@@ -247,9 +247,12 @@ class Manager :
      * @param eid   Endpoint ID of the device as reported during MCTP discovery.
      * @param uuid  Unique identifier string for the device.
      * @param tid   Type ID of the device (PLDM Terminus ID).
+     * @param pdrPayloads[in] Vector of raw Redfish Resource PDR payloads,
+     *        each PDR as a vector of bytes (std::vector<uint8_t>)
      */
-    void createDeviceDbusObject(uint8_t eid, const std::string& uuid,
-                                pldm_tid_t tid);
+    void createDeviceDbusObject(
+        uint8_t eid, const std::string& uuid, pldm_tid_t tid,
+        const std::vector<std::vector<uint8_t>>& pdrPayloads);
 
   private:
     pldm::InstanceIdDb* instanceIdDb_ = nullptr;

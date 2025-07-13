@@ -40,11 +40,14 @@ class Device :
      * @param[in] eid -  MCTP Endpoint ID used in PLDM stack
      * @param[in] tid - Target ID used in PLDM stack.
      * @param[in] uuid - Internal registration identifier.
+     * @param[in] pdrPayloads Vector of raw Redfish Resource PDR payloads,
+     *           each PDR as a vector of bytes (std::vector<uint8_t>)
      */
     Device(sdbusplus::bus::bus& bus, const std::string& path,
            pldm::InstanceIdDb* instanceIdDb,
            pldm::requester::Handler<pldm::requester::Request>* handler,
-           const uint8_t eid, uint8_t tid, const std::string& uuid);
+           const uint8_t eid, uint8_t tid, const std::string& uuid,
+           const std::vector<std::vector<uint8_t>>& pdrPayloads);
 
     // Defaulted special member functions
     Device() = delete;
@@ -150,6 +153,8 @@ class Device :
     uint8_t eid_;
     uint8_t tid_;
     std::string uuid_;
+    /** @brief  Redfish Resource PDR list blob **/
+    std::vector<std::vector<uint8_t>> pdrPayloads_;
     DeviceState currentState_;
     std::unique_ptr<DiscoverySession> session_;
 };

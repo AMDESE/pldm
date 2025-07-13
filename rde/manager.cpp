@@ -7,6 +7,7 @@
 #include <xyz/openbmc_project/PLDM/Event/server.hpp>
 
 #include <future>
+#include <iomanip>
 #include <iostream>
 
 PHOSPHOR_LOG2_USING;
@@ -28,7 +29,7 @@ void Manager::handleMctpEndpoints(const std::vector<MctpInfo>& mctpInfos)
         const uint8_t eid = std::get<0>(mctpInfo);
         const std::string& uuid = std::get<1>(mctpInfo);
 
-        info("Registering device UUID:{UUID} EID:{EID} ", "UUID", uuid, "EID",
+        info("RDE: Handling device UUID:{UUID} EID:{EID}", "UUID", uuid, "EID",
              static_cast<int>(eid));
 
         // Skip if already registered
@@ -44,25 +45,30 @@ void Manager::handleMctpEndpoints(const std::vector<MctpInfo>& mctpInfos)
                 sdbusplus::bus::match::rules::path("/xyz/openbmc_project/pldm"),
             [this, eid, uuid](sdbusplus::message::message& msg) {
                 uint8_t signalTid = 0;
+                std::vector<std::vector<uint8_t>> pdrPayloads;
+                msg.read(signalTid, pdrPayloads);
 
-                msg.read(signalTid);
+                info("RDE: Call back device UUID:{UUID} EID:{EID} TID: {TID}",
+                     "UUID", uuid, "EID", static_cast<int>(eid), "TID",
+                     static_cast<int>(signalTid));
 
-                // Avoid duplicate registration
                 if (!eidMap_.count(eid))
                 {
-                    this->createDeviceDbusObject(eid, uuid, signalTid);
-                }
+                    this->createDeviceDbusObject(eid, uuid, signalTid,
+                                                 pdrPayloads);
 
-                // Optional: remove match after use
-                signalMatches_.erase(eid);
+                    // Remove match if one-time use
+                    signalMatches_.erase(eid);
+                }
             });
 
         signalMatches_[eid] = std::move(match);
     }
 }
 
-void Manager::createDeviceDbusObject(uint8_t eid, const std::string& uuid,
-                                     pldm_tid_t tid)
+void Manager::createDeviceDbusObject(
+    uint8_t eid, const std::string& uuid, pldm_tid_t tid,
+    const std::vector<std::vector<uint8_t>>& pdrPayloads)
 {
     // Prevent duplicate creation for the same EID
     if (eidMap_.count(eid))
@@ -76,8 +82,8 @@ void Manager::createDeviceDbusObject(uint8_t eid, const std::string& uuid,
     std::string friendlyName = "Device_" + std::to_string(eid);
 
     // Create base device
-    auto devicePtr = std::make_shared<Device>(bus_, path, instanceIdDb_,
-                                              handler_, eid, tid, uuid);
+    auto devicePtr = std::make_shared<Device>(
+        bus_, path, instanceIdDb_, handler_, eid, tid, uuid, pdrPayloads);
 
     DeviceContext context;
     context.uuid = uuid;
