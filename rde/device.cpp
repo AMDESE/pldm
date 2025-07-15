@@ -77,6 +77,14 @@ void Device::refreshDeviceInfo()
     // emitDeviceUpdatedSignal(changed);
 }
 
+void Device::performRDEOperation(struct OperationInfo op_info)
+{
+    auto session = std::make_unique<OperationSession>(*this, op_info);
+
+    info("Operation is in progress");
+    session->doOperationInit();
+}
+
 Metadata& Device::getMetadata()
 {
     return metaData_;

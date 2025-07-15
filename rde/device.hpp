@@ -4,7 +4,10 @@
 #include "dictionary_manager.hpp"
 #include "discov_session.hpp"
 #include "resource_registry.hpp"
+#include "operation_session.hpp"
+#include "xyz/openbmc_project/RDE/Common/common.hpp"
 #include "xyz/openbmc_project/RDE/Device/server.hpp"
+#include "xyz/openbmc_project/RDE/Manager/server.hpp"
 
 #include <common/instance_id.hpp>
 #include <requester/handler.hpp>
@@ -64,6 +67,8 @@ class Device :
      * device.
      */
     void refreshDeviceInfo() override;
+
+    void performRDEOperation(struct OperationInfo);
 
     /**
      * @brief Access the device metadata.
@@ -148,6 +153,7 @@ class Device :
      */
     DeviceState getState() const;
 
+    std::unique_ptr<pldm::rde::DictionaryManager> dictionaryManager_;
   private:
     Metadata metaData_;
     pldm::InstanceIdDb* instanceIdDb_ = nullptr;
@@ -160,7 +166,6 @@ class Device :
     DeviceState currentState_;
     std::unique_ptr<DiscoverySession> session_;
     std::unique_ptr<ResourceRegistry> resourceRegistry_;
-    std::unique_ptr<pldm::rde::DictionaryManager> dictionaryManager_;
 };
 
 } // namespace pldm::rde
