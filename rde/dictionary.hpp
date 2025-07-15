@@ -98,6 +98,13 @@ class Dictionary
      */
     void reset();
 
+    /**
+     * @brief Load dictionary bytes from a binary file.
+     * @param filePath Path to the binary file.
+     * @throws std::runtime_error if file can't be read.
+     */
+    void loadFromFile(const std::string& filePath);
+
   private:
     /**
      * @brief full path to the persistence file.

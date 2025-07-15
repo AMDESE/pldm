@@ -64,4 +64,24 @@ const Dictionary* DictionaryManager::get(uint32_t resourceId,
     return (it != dictionaries.end()) ? &it->second : nullptr;
 }
 
+void DictionaryManager::buildAnnotationDictionary(const std::string& filePath)
+{
+    Dictionary dict(0, 0, deviceUUID);
+    dict.loadFromFile(filePath);
+    dict.save();
+    annotationDictionary = std::move(dict);
+}
+
+const Dictionary* DictionaryManager::getAnnotationDictionary() const
+{
+    return annotationDictionary ? &(*annotationDictionary) : nullptr;
+}
+
+void DictionaryManager::createDictionaryFromFile(
+    uint32_t resourceId, uint8_t schemaClass, const std::string& filePath)
+{
+    Dictionary& dict = getOrCreate(resourceId, schemaClass);
+    dict.loadFromFile(filePath);
+    dict.save();
+}
 } // namespace pldm::rde

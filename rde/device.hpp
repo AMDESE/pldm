@@ -1,6 +1,7 @@
 #pragma once
 
 #include "device_common.hpp"
+#include "dictionary_manager.hpp"
 #include "discov_session.hpp"
 #include "resource_registry.hpp"
 #include "xyz/openbmc_project/RDE/Device/server.hpp"
@@ -159,6 +160,7 @@ class Device :
     DeviceState currentState_;
     std::unique_ptr<DiscoverySession> session_;
     std::unique_ptr<ResourceRegistry> resourceRegistry_;
+    std::unique_ptr<pldm::rde::DictionaryManager> dictionaryManager_;
 };
 
 } // namespace pldm::rde

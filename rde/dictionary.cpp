@@ -95,4 +95,16 @@ void Dictionary::reset()
     std::filesystem::remove(persistencePath);
 }
 
+void Dictionary::loadFromFile(const std::string& filePath)
+{
+    std::ifstream file(filePath, std::ios::binary);
+    if (!file)
+    {
+        throw std::runtime_error("Failed to open dictionary file: " + filePath);
+    }
+
+    dictionary.assign(std::istreambuf_iterator<char>(file), {});
+    complete = true;
+}
+
 } // namespace pldm::rde

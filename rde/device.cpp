@@ -1,5 +1,6 @@
 #include "device.hpp"
 
+#include <filesystem>
 #include <iostream>
 
 namespace pldm::rde
@@ -31,10 +32,39 @@ Device::~Device()
 
 void Device::refreshDeviceInfo()
 {
+    info("RDE : Refreshing device EID:{EID}", "EID", static_cast<int>(eid_));
+
     resourceRegistry_ = std::make_unique<ResourceRegistry>();
     resourceRegistry_->loadFromResourcePDR(pdrPayloads_);
 
     session_ = std::make_unique<DiscoverySession>(*this);
+    dictionaryManager_ = std::make_unique<pldm::rde::DictionaryManager>(uuid_);
+
+    // Optional: Load annotation dictionary if needed
+    try
+    {
+        std::string annotationPath = "/var/lib/pldm/annotations/annotation.bin";
+        // TODO : "/var/lib/pldm/" + this->uuid() +
+        // "/annotations/annotation.bin";
+        if (std::filesystem::exists(annotationPath))
+        {
+            info(
+                "RDE: Found annotation dictionary file at path:{PATH}, building now",
+                "PATH", annotationPath);
+            dictionaryManager_->buildAnnotationDictionary(annotationPath);
+        }
+        else
+        {
+            info(
+                "RDE: Annotation dictionary file missing at path:{PATH}, skipping",
+                "PATH", annotationPath);
+        }
+    }
+    catch (const std::exception& e)
+    {
+        error("Failed to load annotation dictionary: Msg{MSG}", "MSG",
+              e.what());
+    }
 
     info("Discovery is in progress");
     session_->doNegotiateRedfish();

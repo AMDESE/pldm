@@ -3,6 +3,7 @@
 #include "dictionary.hpp"
 
 #include <map>
+#include <optional>
 #include <span>
 #include <string>
 #include <tuple>
@@ -95,9 +96,31 @@ class DictionaryManager
         return deviceUUID;
     }
 
+    /**
+     * @brief Build an annotation dictionary from a binary file.
+     * @param filePath Path to the annotation dictionary binary file.
+     */
+    void buildAnnotationDictionary(const std::string& filePath);
+
+    /**
+     * @brief Get the annotation dictionary if it exists.
+     * @return Pointer to the annotation dictionary, or nullptr if not set.
+     */
+    const Dictionary* getAnnotationDictionary() const;
+
+    /**
+     * @brief Create a dictionary from a binary file and store it in the map.
+     * @param resourceId Resource ID.
+     * @param schemaClass Schema class.
+     * @param filePath Path to the binary dictionary file.
+     */
+    void createDictionaryFromFile(uint32_t resourceId, uint8_t schemaClass,
+                                  const std::string& filePath);
+
   private:
     std::string deviceUUID;
     std::map<DictionaryKey, Dictionary> dictionaries;
+    std::optional<Dictionary> annotationDictionary;
 };
 
 } // namespace pldm::rde
