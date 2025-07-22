@@ -116,15 +116,22 @@ DeviceContext* Manager::getDeviceContext(eid devEID)
 }
 
 ObjectPath Manager::startRedfishOperation(
-    uint32_t /*operationID*/,
+    uint32_t operationID,
     sdbusplus::common::xyz::openbmc_project::rde::Common::OperationType
-    /*operationType*/,
-    std::string /*targetURI*/, std::string /*deviceUUID*/, uint8_t /*eid*/,
-    std::string /*payload*/, PayloadFormatType /*payloadFormat*/,
-    EncodingFormatType /*encodingFormat*/, std::string /*sessionId*/)
+        operationType,
+    std::string targetURI, std::string deviceUUID, uint8_t eid,
+    std::string payload, PayloadFormatType payloadFormat,
+    EncodingFormatType encodingFormat, std::string sessionId)
 {
+    auto deviceContext = eidMap_[eid];
+    struct OperationInfo oipInfo(operationID, operationType, targetURI,
+                                 deviceUUID, eid, payload, payloadFormat,
+                                 encodingFormat, sessionId);
+
     // TODO: Implement Redfish operation logic
-    ObjectPath objPath{"/xyz/openbmc_project/RDE/OperationTask/1"};
+    deviceContext.devicePtr->performRDEOperation(oipInfo);
+    ObjectPath objPath{"/xyz/openbmc_project/RDE/OperationTask/" +
+                       std::to_string(operationID)};
     return objPath;
 }
 

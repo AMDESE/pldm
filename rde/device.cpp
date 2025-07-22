@@ -80,6 +80,24 @@ void Device::refreshDeviceInfo()
     deviceUpdated();
 }
 
+void Device::performRDEOperation(struct OperationInfo oipInfo)
+{
+    std::shared_ptr<Device> self;
+    try
+    {
+        self = shared_from_this();
+    }
+    catch (const std::bad_weak_ptr& e)
+    {
+        error("Device shared_from_this() failed: Msg={MSG}", "MSG", e.what());
+        return;
+    }
+    auto session = std::make_unique<OperationSession>(self, oipInfo);
+
+    info("Operation is in progress");
+    session->doOperationInit();
+}
+
 Metadata& Device::getMetadata()
 {
     return metaData_;

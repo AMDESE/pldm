@@ -2,11 +2,13 @@
 
 #include "device_common.hpp"
 #include "dictionary_manager.hpp"
-#include "operation_session.hpp"
 #include "discov_session.hpp"
+#include "operation_session.hpp"
 #include "resource_registry.hpp"
 #include "xyz/openbmc_project/Common/UUID/server.hpp"
+#include "xyz/openbmc_project/RDE/Common/common.hpp"
 #include "xyz/openbmc_project/RDE/Device/server.hpp"
+#include "xyz/openbmc_project/RDE/Manager/server.hpp"
 
 #include <libpldm/base.h>
 
@@ -77,6 +79,8 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
      * device.
      */
     void refreshDeviceInfo() override;
+
+    void performRDEOperation(struct OperationInfo);
 
     /**
      * @brief Access the device metadata.
