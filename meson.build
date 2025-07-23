@@ -271,6 +271,7 @@ executable(
     'rde/discov_session.cpp',
     'rde/manager.cpp',
     'rde/multipart_recv.cpp',
+    'rde/multipart_send.cpp',
     'rde/resource_registry.cpp',
     oem_files,
     'requester/mctp_endpoint_discovery.cpp',

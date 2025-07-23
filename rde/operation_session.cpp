@@ -15,6 +15,8 @@ PHOSPHOR_LOG2_USING;
 
 constexpr uint32_t maxBufferSize = 64 * 1024;
 constexpr uint8_t CONTAINS_REQ_PAYLOAD = 1;
+constexpr bool RDE_START = 0;
+constexpr bool RDE_START_AND_END = 1;
 
 namespace pldm::rde
 {
@@ -189,7 +191,6 @@ BejDictionaries OperationSession::getDictionaries()
 std::vector<uint8_t> OperationSession::getBejPayload()
 {
     BejDictionaries dictionaries = getDictionaries();
-
     libbej::BejEncoderJson encoder;
     int rc = encoder.encode(
         &dictionaries, bejMajorSchemaClass,
@@ -198,6 +199,7 @@ std::vector<uint8_t> OperationSession::getBejPayload()
     {
         error("Failed to encode requestPayload from JSON to BEJ: rc:{RC}", "RC",
               rc);
+        updateState(OpState::OperationFailed);
         return {};
     }
 
@@ -207,7 +209,6 @@ std::vector<uint8_t> OperationSession::getBejPayload()
 std::string OperationSession::getJsonStrPayload()
 {
     BejDictionaries dictionaries = getDictionaries();
-
     libbej::BejDecoderJson decoder;
     int rc =
         decoder.decode(dictionaries, std::span<const uint8_t>(responseBuffer));
@@ -230,14 +231,13 @@ void OperationSession::doOperationInit()
     ResourceRegistry* resourceRegistry = device_->getRegistry();
     const std::string& resourceIdStr =
         resourceRegistry->getResourceIdFromUri(oipInfo.targetURI);
-    uint32_t currentResourceId_ =
-        static_cast<uint32_t>(std::stoul(resourceIdStr));
+    currentResourceId_ = static_cast<uint32_t>(std::stoul(resourceIdStr));
     rde_op_id operationID = oipInfo.operationID;
-    uint32_t sendDataTransferHandle;
     uint8_t operationLocatorLength;
     uint32_t requestPayloadLength;
     bitfield8_t operationFlags = {0};
     std::vector<uint8_t> operationLocator{0};
+    std::vector<uint8_t> requestPayload{0};
 
     if (oipInfo.operationType == OperationType::READ)
     {
@@ -265,8 +265,7 @@ void OperationSession::doOperationInit()
             return;
         }
 
-        requestPayload = getBejPayload();
-        requestPayloadLength = requestPayload.size();
+        requestBuffer = getBejPayload();
 
         const auto& chunkMeta =
             device_->getMetadataField("mcMaxTransferChunkSizeBytes");
@@ -281,21 +280,26 @@ void OperationSession::doOperationInit()
             return;
         }
 
-        uint32_t maxChunkSize = *maxChunkSizePtr;
-        uint32_t totalReqLength =
-            (sizeof(pldm_msg_hdr) + PLDM_RDE_OPERATION_INIT_REQ_FIXED_BYTES +
-             operationLocatorLength + requestPayloadLength);
-
-        if (totalReqLength <= maxChunkSize)
-            sendDataTransferHandle = 0;
+        uint32_t mcMaxChunkSize = *maxChunkSizePtr;
+        uint32_t maxChunkSize =
+            (mcMaxChunkSize -
+             (sizeof(pldm_msg_hdr) + PLDM_RDE_OPERATION_INIT_REQ_FIXED_BYTES +
+              operationLocatorLength));
+        if (requestPayload.size() > maxChunkSize)
+        {
+            multiPartTransferFlag = true;
+            sendDataTransferHandle = instanceId;
+            requestPayloadLength = maxChunkSize;
+            requestPayload = getChunk(requestPayloadLength, RDE_START);
+        }
         else
         {
-            // TODO: Add handler for RDEMultipartSend
-            error(
-                "Request payload is greater than DeviceMaximumTransferChunkSizeBytes. RDEMultipartSend is not supported");
-            updateState(OpState::OperationFailed);
-            device_->getInstanceIdDb().free(eid_, instanceId);
-            return;
+            sendDataTransferHandle = 0;
+            requestPayloadLength =
+                (sizeof(pldm_msg_hdr) +
+                 PLDM_RDE_OPERATION_INIT_REQ_FIXED_BYTES +
+                 operationLocatorLength + requestPayloadLength);
+            requestPayload = getChunk(requestPayloadLength, RDE_START_AND_END);
         }
     }
 
@@ -457,6 +461,50 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
     else if (oipInfo.operationType == OperationType::UPDATE)
     {
         // TODO: Add handler for RDEMultipartSend
+        if (multiPartTransferFlag)
+        {
+            try
+            {
+                info(
+                    "RDE: Received transferHandle={HANDLE} for resourceId={RID}",
+                    "HANDLE", resultTransferHandle, "RID", currentResourceId_);
+
+                sender_ = std::make_unique<pldm::rde::MultipartSender>(
+                    device_, eid_, sendDataTransferHandle, requestBuffer);
+
+                sender_->start(
+                    [this](std::span<const uint8_t> payload,
+                           const pldm::rde::MultipartSndMeta& meta) {
+                        std::cout << "pauload " << payload.data() << "\n";
+                        if (isComplete())
+                        {
+                            info("Multipartsend completed");
+                            multiPartTransferFlag = false;
+                        }
+                        else
+                        {
+                            sender_->setTransferFlag(PLDM_RDE_START);
+                            sender_->sendReceiveRequest(meta.nextHandle);
+                        }
+                    },
+                    [this]() {
+                        info(
+                            "RDE: Multipart transfer complete for resourceId={RID}",
+                            "RID", currentResourceId_);
+                    },
+                    [this](const std::string& reason) {
+                        error(
+                            "RDE: Multipart transfer failed for resourceId={RID}, Error={ERR}",
+                            "RID", currentResourceId_, "ERR", reason);
+                    });
+            }
+            catch (const std::exception& ex)
+            {
+                error(
+                    "RDE: Exception during multipart transfer setup for resourceId={RID}, Error={ERR}",
+                    "RID", currentResourceId_, "ERR", ex.what());
+            }
+        }
     }
 
     // TODO: Add D-bus response handler
@@ -575,7 +623,51 @@ void OperationSession::addChunk(uint32_t resourceId,
         markComplete();
 
     info("RDE: OperationSession addChunk Exit for resourceID={RC}", "RC",
-         resourceId);
+         currentResourceId_);
+}
+
+std::vector<uint8_t> OperationSession::getFromOperationBytes(
+    uint32_t requestPayloadLength)
+{
+    if (requestBuffer.size() < requestPayloadLength)
+    {
+        throw std::runtime_error(
+            "Request buffer too small for requested payload length.");
+    }
+
+    // Extract the chunk from the front
+    std::vector<uint8_t> chunk(requestBuffer.begin(),
+                               requestBuffer.begin() + requestPayloadLength);
+
+    // Remove the extracted bytes from the requestBuffer
+    requestBuffer.erase(requestBuffer.begin(),
+                        requestBuffer.begin() + requestPayloadLength);
+
+    return chunk;
+}
+
+std::vector<uint8_t> OperationSession::getChunk(uint32_t requestPayloadLength,
+                                                bool isFinalChunk)
+{
+    info("RDE: OperationSession getChunk Enter for resourceID={RC}", "RC",
+         currentResourceId_);
+
+    auto chunk = getFromOperationBytes(requestPayloadLength);
+
+    if (chunk.empty())
+    {
+        throw std::invalid_argument("Payload chunk is empty.");
+    }
+
+    if (isFinalChunk)
+    {
+        markComplete();
+    }
+
+    info("RDE: OperationSession getChunk Exit for resourceID={RC}", "RC",
+         currentResourceId_);
+
+    return chunk;
 }
 
 } // namespace pldm::rde

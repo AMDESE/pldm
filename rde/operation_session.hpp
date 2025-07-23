@@ -4,6 +4,7 @@
 
 #include "device_common.hpp"
 #include "multipart_recv.hpp"
+#include "multipart_send.hpp"
 
 #include <libpldm/base.h>
 #include <libpldm/platform.h>
@@ -175,6 +176,11 @@ class OperationSession
     void addChunk(uint32_t resourceId, std::span<const uint8_t> payload,
                   bool hasChecksum, bool isFinalChunk);
 
+    std::vector<uint8_t> getChunk(uint32_t requestPayloadLength,
+                                  bool isFinalChunk);
+
+    std::vector<uint8_t> getFromOperationBytes(uint32_t requestPayloadLength);
+
   private:
     std::shared_ptr<Device> device_;
     pldm::eid eid_;
@@ -183,11 +189,14 @@ class OperationSession
     OpState currentState_ = OpState::Idle;
     struct OperationInfo oipInfo;
     rde_op_id operationID = 0;
-    std::vector<uint8_t> requestPayload;
+    std::vector<uint8_t> requestBuffer;
     std::vector<uint8_t> responseBuffer;
     nlohmann::json jsonPayload;
+    bool multiPartTransferFlag = false;
+    uint32_t sendDataTransferHandle = 0;
     bool complete = false;
     std::unique_ptr<pldm::rde::MultipartReceiver> receiver_;
+    std::unique_ptr<pldm::rde::MultipartSender> sender_;
 };
 
 } // namespace pldm::rde
