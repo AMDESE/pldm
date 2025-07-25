@@ -286,6 +286,7 @@ executable(
     'rde/manager.cpp',
     'rde/multipart_recv.cpp',
     'rde/resource_registry.cpp',
+    'rde/utils.cpp',
     oem_files,
     'requester/mctp_endpoint_discovery.cpp',
     implicit_include_directories: false,
