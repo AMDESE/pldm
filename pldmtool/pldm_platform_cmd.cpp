@@ -604,8 +604,11 @@ class GetPDR : public CommandInterface
                               respRecordData + respCnt);
 
             // End or StartAndEnd
-            if (transferFlag == PLDM_PLATFORM_TRANSFER_END ||
-                transferFlag == PLDM_PLATFORM_TRANSFER_START_AND_END)
+            if ((transferFlag ==
+                     static_cast<uint8_t>(PLDM_PLATFORM_TRANSFER_END) ||
+                 transferFlag == static_cast<uint8_t>(
+                                     PLDM_PLATFORM_TRANSFER_START_AND_END)))
+
             {
                 printPDRMsg(nextRecordHndl, recordData.size(),
                             recordData.data(), terminusHandle);
