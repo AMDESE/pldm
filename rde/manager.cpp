@@ -1,7 +1,6 @@
-#include "manager.hpp"
-
 #include "device.hpp"
 #include "device_common.hpp"
+#include "manager.hpp"
 
 #include <phosphor-logging/lg2.hpp>
 #include <sdbusplus/bus/match.hpp>
@@ -28,50 +27,32 @@ Manager::Manager(sdbusplus::bus::bus& bus, sdeventplus::Event& event,
     bus_.request_name(DeviceServiceName.data());
     objManager_ =
         std::make_unique<sdbusplus::server::manager_t>(bus_, DeviceObjectPath);
-}
 
-void Manager::handleMctpEndpoints(const std::vector<MctpInfo>& mctpInfos)
-{
-    for (const auto& mctpInfo : mctpInfos)
-    {
-        const eid devEID = std::get<0>(mctpInfo);
-        const UUID& devUUID = std::get<1>(mctpInfo);
+    // match for all RDEDeviceDetected signals
+    signalMatch_ = std::make_unique<sdbusplus::bus::match_t>(
+        bus_,
+        sdbusplus::bus::match::rules::type::signal() +
+            sdbusplus::bus::match::rules::member("RDEDeviceDetected") +
+            sdbusplus::bus::match::rules::interface(
+                "xyz.openbmc_project.PLDM.Event") +
+            sdbusplus::bus::match::rules::path("/xyz/openbmc_project/pldm"),
+        [this](sdbusplus::message::message& msg) {
+            uint8_t signalTid = 0;
+            uint8_t signalEid = 0;
+            UUID devUUID;
+            std::vector<std::vector<uint8_t>> pdrPayloads;
 
-        info("RDE: Handling device UUID:{UUID} EID:{EID}", "UUID", devUUID,
-             "EID", static_cast<int>(devEID));
+            msg.read(signalTid, signalEid, devUUID, pdrPayloads);
+            info("RDE: RDEDeviceDetected UUID:{UUID} EID:{EID} TID:{TID}",
+                 "UUID", devUUID, "EID", static_cast<int>(signalEid), "TID",
+                 static_cast<int>(signalTid));
 
-        // Skip if already registered
-        if (signalMatches_.count(devEID))
-            continue;
-
-        auto match = std::make_unique<sdbusplus::bus::match_t>(
-            bus_,
-            sdbusplus::bus::match::rules::type::signal() +
-                sdbusplus::bus::match::rules::member("DiscoveryComplete") +
-                sdbusplus::bus::match::rules::interface(
-                    "xyz.openbmc_project.PLDM.Event") +
-                sdbusplus::bus::match::rules::path("/xyz/openbmc_project/pldm"),
-            [this, devEID, devUUID](sdbusplus::message::message& msg) {
-                uint8_t signalTid = 0;
-                std::vector<std::vector<uint8_t>> pdrPayloads;
-                msg.read(signalTid, pdrPayloads);
-
-                info("RDE: Call back device UUID:{UUID} EID:{EID} TID: {TID}",
-                     "UUID", devUUID, "EID", static_cast<int>(devEID), "TID",
-                     static_cast<int>(signalTid));
-
-                if (!eidMap_.count(devEID))
-                {
-                    this->createDeviceDbusObject(devEID, devUUID, signalTid,
-                                                 pdrPayloads);
-
-                    // Remove match if one-time use
-                    signalMatches_.erase(devEID);
-                }
-            });
-
-        signalMatches_[devEID] = std::move(match);
-    }
+            if (!eidMap_.count(signalEid))
+            {
+                this->createDeviceDbusObject(signalEid, devUUID, signalTid,
+                                             pdrPayloads);
+            }
+        });
 }
 
 void Manager::createDeviceDbusObject(

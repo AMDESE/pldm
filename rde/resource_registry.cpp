@@ -10,7 +10,7 @@
 namespace pldm::rde
 {
 
-ResourceRegistry::ResourceRegistry(uint16_t eid, void* parent) :
+ResourceRegistry::ResourceRegistry(const pldm::eid eid, void* parent) :
     entityId_(eid), parent_(parent)
 {}
 
@@ -398,8 +398,10 @@ void ResourceRegistry::loadFromResourcePDR(
         registerResource(resourceId, info);
     }
 
-    // Need to replace with unique file name
-    saveToFile("/tmp/ResourceRegistry.txt");
+    constexpr const char* kResourceRegistryPrefix = "/tmp/ResourceRegistry_";
+    std::string filename =
+        std::string(kResourceRegistryPrefix) + std::to_string(entityId_);
+    saveToFile(filename);
 }
 
 } // namespace pldm::rde
