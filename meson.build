@@ -106,6 +106,9 @@ if get_option('oem-ibm').allowed()
     )
     add_project_arguments('-DOEM_IBM', language: 'cpp')
 endif
+if get_option('oem-amd').allowed()
+    add_project_arguments('-DOEM_AMD', language: 'cpp')
+endif
 conf_data.set('RESPONSE_TIME_OUT', get_option('response-time-out'))
 conf_data.set(
     'FLIGHT_RECORDER_MAX_ENTRIES',
