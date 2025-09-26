@@ -17,6 +17,11 @@ PHOSPHOR_LOG2_USING;
 
 constexpr uint32_t maxBufferSize = 64 * 1024;
 constexpr uint8_t CONTAINS_REQ_PAYLOAD = 1;
+#ifdef OEM_AMD
+constexpr bool allowEmptyPayload = true;
+#else
+constexpr bool allowEmptyPayload = false;
+#endif
 
 namespace pldm::rde
 {
@@ -256,8 +261,7 @@ void OperationSession::doOperationInit()
     int rc = 0;
     const std::string& resourceIdStr =
         device_->getRegistry()->getResourceIdFromUri(oipInfo.targetURI);
-    currentResourceId_ =
-        static_cast<uint32_t>(std::stoul(resourceIdStr));
+    currentResourceId_ = static_cast<uint32_t>(std::stoul(resourceIdStr));
     rde_op_id operationID = oipInfo.operationID;
     uint32_t sendDataTransferHandle;
     uint8_t operationLocatorLength;
@@ -280,23 +284,38 @@ void OperationSession::doOperationInit()
         operationLocatorLength = 0;
         operationFlags.bits.bit1 = CONTAINS_REQ_PAYLOAD;
 
-        try
+        if (!oipInfo.payload.empty())
         {
-            jsonPayload = nlohmann::json::parse(oipInfo.payload);
+            try
+            {
+                jsonPayload = nlohmann::json::parse(oipInfo.payload);
+            }
+            catch (const nlohmann::json::parse_error& e)
+            {
+                error(
+                    "JSON parsing error: EID '{EID}', targetURI '{URI}, json payload '{PAYLOAD}",
+                    "EID", oipInfo.eid, "URI", oipInfo.targetURI, "PAYLOAD",
+                    oipInfo.payload);
+                updateState(OpState::OperationFailed);
+                device_->getInstanceIdDb().free(eid_, instanceId);
+                return;
+            }
+
+            payloadBuffer = getBejPayload();
         }
-        catch (const nlohmann::json::parse_error& e)
+        else
         {
-            error(
-                "JSON parsing error: EID '{EID}', targetURI '{URI}, json payload '{PAYLOAD}",
-                "EID", oipInfo.eid, "URI", oipInfo.targetURI, "PAYLOAD",
-                oipInfo.payload);
-            updateState(OpState::OperationFailed);
-            device_->getInstanceIdDb().free(eid_, instanceId);
-            return;
+            if (!allowEmptyPayload)
+            {
+                // With OEM_AMD disabled empty payloads are not allowed
+                error(
+                    "RDE: Empty request payload is not allowed for UPDATE. EID '{EID}', targetURI '{URI}'",
+                    "EID", oipInfo.eid, "URI", oipInfo.targetURI);
+                updateState(OpState::OperationFailed);
+                device_->getInstanceIdDb().free(eid_, instanceId);
+                return;
+            }
         }
-
-        payloadBuffer = getBejPayload();
-
         const auto& chunkMeta =
             device_->getMetadataField("mcMaxTransferChunkSizeBytes");
         const auto* maxChunkSizePtr = std::get_if<uint32_t>(&chunkMeta);
