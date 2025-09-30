@@ -172,6 +172,16 @@ struct DBusMapping
     std::string propertyType; //!< D-Bus property type
 };
 
+struct ResourceInfo
+{
+    std::string uri;
+    uint16_t schemaClass;                // PLDM schema class ID
+    std::string schemaName;              // e.g. "Chassis"
+    std::string schemaVersion;           // e.g. "1.2.0"
+    std::vector<std::string> operations; // Supported RDE operations
+    std::string resourceId;              // Unique Redfish resource ID
+};
+
 using PropertyValue =
     std::variant<bool, uint8_t, int16_t, uint16_t, int32_t, uint32_t, int64_t,
                  uint64_t, double, std::string, std::vector<uint8_t>,
@@ -668,6 +678,42 @@ std::optional<std::string> fruFieldValuestring(const uint8_t* value,
  */
 std::optional<uint32_t> fruFieldParserU32(const uint8_t* value,
                                           const uint8_t& length);
+
+/** @brief Extract the schema version.
+ *
+ *  This function parses the 32-bit PLDM version structure (ver32_t) and
+ *  extracts the version component, returning it as a string.
+ *
+ *  @param[in] version - The 32-bit encoded PLDM version (ver32_t).
+ *
+ *  @return A string representing the version number.
+ */
+std::string getMajorSchemaVersion(ver32_t version);
+
+
+/** @brief Extract the RDE resource name from a raw byte buffer.
+ *
+ *  @param[in] ptr - Pointer to the raw byte buffer containing the resource name.
+ *  @param[in] length - Length of the byte buffer.
+ *
+ *  @return A string representing the decoded RDE resource name.
+ */
+
+std::string getRdeResourceName(uint8_t* ptr, size_t length);
+
+
+/** @brief Parse a list of Redfish Resource PDRs into structured resource information.
+ *
+ *  This function processes a vector of shared pointers to PLDM Redfish Resource
+ *  PDR structures and extracts relevant information from each entry to populate
+ *  a list of `ResourceInfo` objects.
+ *
+ *  @param[in] pdrList - A vector of shared pointers to PLDM Redfish Resource PDRs.
+ *
+ *  @return A vector of `ResourceInfo` structures containing parsed data from the PDRs.
+ */
+std::vector<ResourceInfo> parseRedfishResourcePDRs(
+    const std::vector<std::shared_ptr<pldm_redfish_resource_pdr>>& pdrList);
 
 } // namespace utils
 } // namespace pldm

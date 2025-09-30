@@ -851,5 +851,142 @@ std::optional<uint32_t> fruFieldParserU32(const uint8_t* value,
     return ret;
 }
 
+std::string getRdeResourceName(uint8_t* ptr, size_t length)
+{
+    if (ptr == nullptr || length == 0)
+    {
+        return {};
+    }
+
+    // Remove trailing null character if present
+    if (ptr[length - 1] == '\0')
+    {
+        --length;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return std::string(reinterpret_cast<const char*>(ptr), length);
+}
+
+std::string constructFullUri(
+    uint16_t resourceId, std::string baseURI,
+    const std::unordered_map<uint16_t, std::string>& subUriMap,
+    const std::unordered_map<uint16_t, uint16_t>& parentMap)
+{
+    std::vector<std::string> uriParts;
+    while (resourceId != 0 && subUriMap.count(resourceId))
+    {
+        const std::string& part = subUriMap.at(resourceId);
+        if (!part.empty())
+        {
+            uriParts.insert(uriParts.begin(), part);
+        }
+        auto it = parentMap.find(resourceId);
+        resourceId = (it != parentMap.end()) ? it->second : 0;
+    }
+
+    std::string fullUri = baseURI;
+    for (const auto& part : uriParts)
+    {
+        if (part.front() == '/')
+        {
+            fullUri += part;
+        }
+        else
+        {
+            fullUri += "/" + part;
+        }
+    }
+    return fullUri;
+}
+
+std::string getMajorSchemaVersion(ver32_t version)
+{
+    constexpr int MaxSize = 1024;
+    char version_buffer[MaxSize] = {0};
+    int rc = 0;
+
+    if (version.alpha == 0xFF && version.update == 0xFF &&
+        version.minor == 0xFF && version.major == 0xFF)
+        return std::string("?.?");
+    else
+    {
+        rc = ver2str(&version, version_buffer, sizeof(version_buffer));
+    }
+    return std::string(version_buffer, rc);
+}
+
+std::vector<ResourceInfo> parseRedfishResourcePDRs(
+    const std::vector<std::shared_ptr<pldm_redfish_resource_pdr>>& pdrList)
+{
+    std::unordered_map<uint16_t, std::string> subUriMap;
+    std::unordered_map<uint16_t, uint16_t> parentMap;
+    std::unordered_map<uint16_t, std::string> uriMap;
+    std::unordered_map<uint16_t, ResourceInfo> resInfoMap;
+    std::vector<ResourceInfo> resInfoVect;
+    std::string baseURI = "/redfish/v1/Systems/1/";
+
+    for (const auto& pdr : pdrList)
+    {
+        ResourceInfo info;
+        // check if the PDR is root and construct base URL
+        if (pdr->cont_resrc_id == 0)
+        {
+            baseURI += getRdeResourceName(pdr->prop_cont_resrc_name,
+                                          pdr->prop_cont_resrc_length);
+            // TODO append base uri with proper info
+            baseURI += "/1";
+        }
+        info.schemaName = getRdeResourceName(pdr->major_schema.name,
+                                             pdr->major_schema.length);
+        info.schemaVersion = getMajorSchemaVersion(pdr->major_schema_version);
+        info.resourceId = std::to_string(pdr->resource_id);
+
+        subUriMap[pdr->resource_id] =
+            getRdeResourceName(pdr->sub_uri_name, pdr->sub_uri_length);
+        parentMap[pdr->resource_id] = pdr->cont_resrc_id;
+
+        for (auto [i, res] :
+             std::views::iota(0u, pdr->add_resrc_id_count) |
+                 std::views::transform([&](size_t i) {
+                     return std::pair{i, pdr->additional_resrc[i]};
+                 }))
+        {
+            uint16_t addId = res->resrc_id;
+            std::string addUri = getRdeResourceName(res->name, res->length);
+            subUriMap[addId] = addUri;
+            parentMap[addId] = pdr->resource_id;
+        }
+        resInfoMap[pdr->resource_id] = info;
+    }
+
+    for (const auto& [rid, _] : subUriMap)
+    {
+        uriMap[rid] = constructFullUri(rid, baseURI, subUriMap, parentMap);
+    }
+
+    for (const auto& [rid, url] : uriMap)
+    {
+        ResourceInfo info;
+        info.resourceId = std::to_string(rid);
+        info.uri = url;
+        auto it = resInfoMap.find(rid);
+        if (it != resInfoMap.end())
+        {
+            info.schemaName = it->second.schemaName;
+            info.schemaName = it->second.schemaVersion;
+            info.schemaClass = 0;
+        }
+        else
+        {
+            info.schemaName = "";
+            info.schemaVersion = "";
+            info.schemaClass = 0;
+        }
+        resInfoVect.push_back(info);
+    }
+
+    return resInfoVect;
+}
+
 } // namespace utils
 } // namespace pldm
