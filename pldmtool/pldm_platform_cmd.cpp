@@ -1874,7 +1874,7 @@ class SetNumericEffecterValue : public CommandInterface
         app->add_option("-s, --size", effecterDataSize,
                         "The bit width and format of the setting value for the "
                         "effecter. enum value: {uint8, sint8, uint16, sint16, "
-                        "uint32, sint32}\n")
+                        "uint32, sint32, uint64, sint64}\n")
             ->required();
         app->add_option("-d,--data", maxEffecterValue,
                         "The setting value of numeric effecter being "
@@ -1886,7 +1886,7 @@ class SetNumericEffecterValue : public CommandInterface
     {
         std::vector<uint8_t> requestMsg(
             sizeof(pldm_msg_hdr) +
-            PLDM_SET_NUMERIC_EFFECTER_VALUE_MIN_REQ_BYTES + 3);
+            PLDM_SET_NUMERIC_EFFECTER_VALUE_MIN_REQ_BYTES + 7);
 
         uint8_t* effecterValue = (uint8_t*)&maxEffecterValue;
 
@@ -1903,6 +1903,11 @@ class SetNumericEffecterValue : public CommandInterface
             effecterDataSize == PLDM_EFFECTER_DATA_SIZE_SINT32)
         {
             payload_length = PLDM_SET_NUMERIC_EFFECTER_VALUE_MIN_REQ_BYTES + 3;
+        }
+        if (effecterDataSize == PLDM_EFFECTER_DATA_SIZE_UINT64 ||
+            effecterDataSize == PLDM_EFFECTER_DATA_SIZE_SINT64)
+        {
+            payload_length = PLDM_SET_NUMERIC_EFFECTER_VALUE_MIN_REQ_BYTES + 7;
         }
         auto rc = encode_set_numeric_effecter_value_req(
             0, effecterId, effecterDataSize, effecterValue, request,
@@ -2074,7 +2079,7 @@ class GetSensorReading : public CommandInterface
         uint8_t presentState = 0;
         uint8_t previousState = 0;
         uint8_t eventState = 0;
-        std::array<uint8_t, sizeof(uint32_t)>
+        std::array<uint8_t, sizeof(uint64_t)>
             presentReading{}; // maximum size for the present Value is uint32
                               // according to spec DSP0248
 
@@ -2139,6 +2144,18 @@ class GetSensorReading : public CommandInterface
             {
                 output["presentReading"] =
                     *(reinterpret_cast<int32_t*>(presentReading.data()));
+                break;
+            }
+            case PLDM_SENSOR_DATA_SIZE_UINT64:
+            {
+                output["presentReading"] =
+                    *(reinterpret_cast<uint64_t*>(presentReading.data()));
+                break;
+            }
+            case PLDM_SENSOR_DATA_SIZE_SINT64:
+            {
+                output["presentReading"] =
+                    *(reinterpret_cast<int64_t*>(presentReading.data()));
                 break;
             }
             default:
@@ -2292,10 +2309,10 @@ class GetNumericEffecterValue : public CommandInterface
         uint8_t completionCode = 0;
         uint8_t effecterDataSize = 0;
         uint8_t effecterOperationalState = 0;
-        std::array<uint8_t, sizeof(uint32_t)>
+        std::array<uint8_t, sizeof(uint64_t)>
             pendingValue{}; // maximum size for the pending Value is uint32
                             // according to spec DSP0248
-        std::array<uint8_t, sizeof(uint32_t)>
+        std::array<uint8_t, sizeof(uint64_t)>
             presentValue{}; // maximum size for the present Value is uint32
                             // according to spec DSP0248
 
@@ -2365,6 +2382,22 @@ class GetNumericEffecterValue : public CommandInterface
                     *(reinterpret_cast<int32_t*>(pendingValue.data()));
                 output["presentValue"] =
                     *(reinterpret_cast<int32_t*>(presentValue.data()));
+                break;
+            }
+            case PLDM_EFFECTER_DATA_SIZE_UINT64:
+            {
+                output["pendingValue"] =
+                    *(reinterpret_cast<uint64_t*>(pendingValue.data()));
+                output["presentValue"] =
+                    *(reinterpret_cast<uint64_t*>(presentValue.data()));
+                break;
+            }
+            case PLDM_EFFECTER_DATA_SIZE_SINT64:
+            {
+                output["pendingValue"] =
+                    *(reinterpret_cast<int64_t*>(pendingValue.data()));
+                output["presentValue"] =
+                    *(reinterpret_cast<int64_t*>(presentValue.data()));
                 break;
             }
             default:
