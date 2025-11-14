@@ -162,7 +162,7 @@ int mctpSockSendRecv(const uint8_t mctpNetworkId, const uint8_t eid,
     // wait for for the response from the MCTP Endpoint
     // Instance ID expiration interval (MT4) - after which the instance ID
     // will be reused. For PCIe binding this timeout is 5 seconds.
-    const int MCTP_INST_ID_EXPIRATION_INTERVAL_MT4 = 5;
+    const int MCTP_INST_ID_EXPIRATION_INTERVAL_MT4 = 15;
     struct pollfd pollfd;
     pollfd.fd = sd;
     pollfd.events = POLLIN;
@@ -177,7 +177,7 @@ int mctpSockSendRecv(const uint8_t mctpNetworkId, const uint8_t eid,
     else if (rc == 0)
     {
         // poll() timed out
-        std::cerr << "Timeout(5s): No response from the endpoint\n";
+        std::cerr << "Timeout(15s): No response from the endpoint\n";
         close(sd);
         return rc;
     }
