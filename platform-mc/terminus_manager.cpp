@@ -200,7 +200,12 @@ exec::task<int> TerminusManager::discoverMctpTerminusTask()
             if (it == termini.end())
             {
                 mctpInfoAvailTable[mctpInfo] = true;
-                co_await initMctpTerminus(mctpInfo);
+                auto rc = co_await initMctpTerminus(mctpInfo);
+                if (rc != PLDM_SUCCESS)
+                {
+                    mctpInfoAvailTable.erase(mctpInfo);
+                    continue;
+                }
             }
 
             /* Get TID of initialized terminus */
