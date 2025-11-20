@@ -613,7 +613,8 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
             }
         }
 #ifdef OEM_AMD
-        emitCacheConsumedSignal(oipInfo.opTaskPath, oipInfo.deviceUUID);
+        if (!oipInfo.payload.empty())
+            emitCacheConsumedSignal(oipInfo.opTaskPath, oipInfo.deviceUUID);
 #endif
         emitTaskUpdatedSignal(
             device_->getBus(), oipInfo.opTaskPath, "",
