@@ -812,7 +812,7 @@ class RDEOperationStatus : public CommandInterface
         constexpr uint32_t responsePayloadMaxSize = 1024;
         uint8_t decodedResponsePayload[responsePayloadMaxSize];
 
-        auto rc = decode_rde_operation_init_resp(
+        auto rc = decode_rde_operation_status_resp(
             responsePtr, payloadLength, &decodedCompletionCode,
             &decodedOperationStatus, &decodedCompletionPercentage,
             &decodedCompletionTimeSeconds, &decodedOperationExecutionFlags,
