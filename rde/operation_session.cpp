@@ -264,7 +264,7 @@ void emitCacheConsumedSignal(std::string matchString, std::string deviceUUID)
         bus.new_method_call(rdeCacheManagerService, rdeCacheManagerPath,
                             rdeCacheManagerInterface, "RegisterSignal");
 
-    method.append(matchString, deviceUUID);
+    method.append(deviceUUID, matchString);
 
     auto reply = bus.call(method, dbusTimeout);
 }
