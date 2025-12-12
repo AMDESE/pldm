@@ -257,6 +257,97 @@ std::string OperationSession::getJsonStrPayload()
 }
 
 #ifdef OEM_AMD
+inline std::string loadProcessorURI(std::string devUUID)
+{
+    constexpr const char* rdeDeviceMetadataFile =
+        "/etc/pldm/rde_device_metadata.json";
+
+    std::string schema;
+    std::string deviceId;
+
+    if (!std::filesystem::exists(rdeDeviceMetadataFile))
+    {
+        error("RDE: Device metadata file {FILE} not found: ", "FILE",
+              rdeDeviceMetadataFile);
+        return "";
+    }
+
+    std::ifstream file(rdeDeviceMetadataFile);
+    if (!file.is_open())
+    {
+        error("RDE: Failed to open device metadata file:{FILE} ", "FILE",
+              rdeDeviceMetadataFile);
+        return "";
+    }
+
+    try
+    {
+        if (file.peek() == std::ifstream::traits_type::eof())
+        {
+            error("RDE: Device metadata file{FILE} is empty: ", "FILE",
+                  rdeDeviceMetadataFile);
+            return "";
+        }
+
+        nlohmann::json jsonData;
+        file >> jsonData;
+
+        if (!jsonData.is_object())
+        {
+            error(
+                "RDE: Device metadata file does not contain a valid JSON object.");
+            return "";
+        }
+
+        for (const auto& [jsonSchema, deviceEntries] : jsonData.items())
+        {
+            if (!deviceEntries.is_object())
+            {
+                error("RDE: Invalid schema section {SCHEMA} ", "SCHEMA",
+                      jsonSchema);
+                continue;
+            }
+
+            for (const auto& [jsonDeviceId, deviceInfo] : deviceEntries.items())
+            {
+                if (!deviceInfo.contains("UUIDs") ||
+                    !deviceInfo["UUIDs"].is_array())
+                {
+                    error(
+                        "RDE: Missing or invalid 'UUIDs' for {SCHEMA} {DEVID}",
+                        "SCHEMA", jsonSchema, "DEVID", jsonDeviceId);
+                    continue;
+                }
+
+                const std::string deviceKeyFromJson =
+                    jsonSchema + "/" + jsonDeviceId + "/";
+
+                for (const auto& uuid : deviceInfo["UUIDs"])
+                {
+                    if (!uuid.is_string())
+                    {
+                        error("RDE: Invalid UUID format in {KEY}", "KEY",
+                              deviceKeyFromJson);
+                        continue;
+                    }
+                    if (devUUID == uuid.get<std::string>())
+                    {
+                        return deviceKeyFromJson;
+                    }
+                }
+            }
+        }
+    }
+    catch (const std::exception& e)
+    {
+        error("RDE: Unexpected error while reading device metadata file:{MSG} ",
+              "MSG", e.what());
+        return "";
+    }
+
+    return "";
+}
+
 void emitCacheConsumedSignal(std::string matchString, std::string deviceUUID)
 {
     auto& bus = pldm::utils::DBusHandler::getBus();
@@ -266,6 +357,34 @@ void emitCacheConsumedSignal(std::string matchString, std::string deviceUUID)
 
     method.append(deviceUUID, matchString);
 
+    auto reply = bus.call(method, dbusTimeout);
+}
+
+void createCache(std::string targetURI, OperationType operationType,
+                 std::string payload, std::string deviceUUID)
+{
+    auto& bus = pldm::utils::DBusHandler::getBus();
+    auto method =
+        bus.new_method_call(rdeCacheManagerService, rdeCacheManagerPath,
+                            rdeCacheManagerInterface, "CreateCache");
+
+    const std::string redfishRootURI = "/redfish/v1/Systems/system/";
+    const std::string redfishProcessorURI = loadProcessorURI(deviceUUID);
+    if (redfishProcessorURI.empty())
+    {
+        error("Caching failed. Unable to find Processor URI");
+        return;
+    }
+
+    const std::string fullURI =
+        redfishRootURI + redfishProcessorURI + targetURI;
+
+    if (operationType == OperationType::UPDATE)
+        method.append(deviceUUID, "patch", fullURI, payload);
+    else
+        return;
+
+    info("Caching the data for RDE Device of UUID={UUID}", "UUID", deviceUUID);
     auto reply = bus.call(method, dbusTimeout);
 }
 #endif
@@ -438,6 +557,8 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
     {
         error("Null PLDM response received from endpoint ID {EID}", "EID",
               eid_);
+        createCache(oipInfo.targetURI, oipInfo.operationType, oipInfo.payload,
+                    oipInfo.deviceUUID);
         updateState(OpState::OperationFailed);
         return;
     }
@@ -485,6 +606,8 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
             "Failed to decode handleOperationInitResp response rc:{RC} cc:{CC}",
             "RC", rc, "CC", cc);
         logCompletionCodeError(cc);
+        createCache(oipInfo.targetURI, oipInfo.operationType, oipInfo.payload,
+                    oipInfo.deviceUUID);
         updateState(OpState::OperationFailed);
         emitTaskUpdatedSignal(device_->getBus(), oipInfo.opTaskPath, "{}",
                               static_cast<uint16_t>(OpState::OperationFailed));
