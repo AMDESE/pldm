@@ -526,8 +526,10 @@ void OperationSession::doOperationInit()
     {
         error("Failed to send request OperationInit EID '{EID}', RC '{RC}'",
               "EID", eid_, "RC", rc);
+#ifdef OEM_AMD
         createCache(oipInfo.targetURI, oipInfo.operationType, oipInfo.payload,
                     oipInfo.deviceUUID);
+#endif
         updateState(OpState::OperationFailed);
         device_->getInstanceIdDb().free(eid_, instanceId);
         throw std::runtime_error("Failed to send request OperationInit");
@@ -560,8 +562,10 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
     {
         error("Null PLDM response received from endpoint ID {EID}", "EID",
               eid_);
+#ifdef OEM_AMD
         createCache(oipInfo.targetURI, oipInfo.operationType, oipInfo.payload,
                     oipInfo.deviceUUID);
+#endif
         updateState(OpState::OperationFailed);
         return;
     }
@@ -609,8 +613,10 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
             "Failed to decode handleOperationInitResp response rc:{RC} cc:{CC}",
             "RC", rc, "CC", cc);
         logCompletionCodeError(cc);
+#ifdef OEM_AMD
         createCache(oipInfo.targetURI, oipInfo.operationType, oipInfo.payload,
                     oipInfo.deviceUUID);
+#endif
         updateState(OpState::OperationFailed);
         emitTaskUpdatedSignal(device_->getBus(), oipInfo.opTaskPath, "{}",
                               static_cast<uint16_t>(OpState::OperationFailed));
