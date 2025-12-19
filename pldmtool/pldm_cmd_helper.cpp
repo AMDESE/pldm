@@ -91,6 +91,7 @@ void fillCompletionCode(uint8_t completionCode, ordered_json& data,
 
 int mctpSockSendRecv(const uint8_t mctpNetworkId, const uint8_t eid,
                      const bool mctpPreAllocTag,
+                     const uint16_t pollInterval,
                      const std::vector<uint8_t>& requestMsg,
                      void** responseMessage, size_t* responseMessageSize)
 {
@@ -162,14 +163,13 @@ int mctpSockSendRecv(const uint8_t mctpNetworkId, const uint8_t eid,
     // wait for for the response from the MCTP Endpoint
     // Instance ID expiration interval (MT4) - after which the instance ID
     // will be reused. For PCIe binding this timeout is 5 seconds.
-    const int MCTP_INST_ID_EXPIRATION_INTERVAL_MT4 = 5;
     struct pollfd pollfd;
     pollfd.fd = sd;
     pollfd.events = POLLIN;
-    rc = poll(&pollfd, 1, MCTP_INST_ID_EXPIRATION_INTERVAL_MT4 * 1000);
+    rc = poll(&pollfd, 1, pollInterval * 1000);
     if (rc < 0)
     {
-        std::cerr << "poll(AF_MCTP, 5000) failed. errnostr = "
+        std::cerr << "poll(AF_MCTP, " << pollInterval << ") failed. errnostr = "
                   << strerror(errno) << "\n";
         close(sd);
         return rc;
@@ -246,7 +246,7 @@ void CommandInterface::exec()
     }
 
     std::vector<uint8_t> responseMsg;
-    rc = pldmSendRecv(requestMsg, responseMsg);
+    rc = pldmSendRecv(requestMsg, responseMsg, pollInterval);
 
     if (rc != PLDM_SUCCESS)
     {
@@ -261,7 +261,8 @@ void CommandInterface::exec()
 }
 
 int CommandInterface::pldmSendRecv(std::vector<uint8_t>& requestMsg,
-                                   std::vector<uint8_t>& responseMsg)
+                                   std::vector<uint8_t>& responseMsg,
+                                   uint16_t pollInterval)
 {
     // By default enable request/response msgs for pldmtool raw commands.
     if ((CommandInterface::pldmType == "raw") ||
@@ -276,6 +277,14 @@ int CommandInterface::pldmSendRecv(std::vector<uint8_t>& requestMsg,
         printBuffer(Tx, requestMsg);
     }
 
+    if (CommandInterface::pldmType == "amdMctpSfs")
+    {
+       std::cout << "pldmtool: ";
+       size_t printLen = std::min(requestMsg.size(), static_cast<size_t>(32));
+       std::vector<uint8_t> partialMsg(requestMsg.begin(), requestMsg.begin() + printLen);
+       printBuffer(Tx, partialMsg);
+    }
+
     auto tid = mctp_eid;
     PldmTransport pldmTransport{};
     uint8_t retry = 0;
@@ -286,7 +295,7 @@ int CommandInterface::pldmSendRecv(std::vector<uint8_t>& requestMsg,
         void* responseMessage = nullptr;
         size_t responseMessageSize{};
 
-        if (CommandInterface::pldmType != "mctpRaw")
+        if (CommandInterface::pldmType != "mctpRaw" && CommandInterface::pldmType != "amdMctpSfs")
         {
             rc = pldmTransport.sendRecvMsg(tid, requestMsg.data(),
                                            requestMsg.size(), responseMessage,
@@ -302,7 +311,7 @@ int CommandInterface::pldmSendRecv(std::vector<uint8_t>& requestMsg,
         else
         {
             rc = mctpSockSendRecv(mctpNetworkId, mctp_eid, mctpPreAllocTag,
-                                  requestMsg, &responseMessage,
+                                  pollInterval, requestMsg, &responseMessage,
                                   &responseMessageSize);
             if (rc)
             {
@@ -323,6 +332,14 @@ int CommandInterface::pldmSendRecv(std::vector<uint8_t>& requestMsg,
         {
             std::cout << "pldmtool: ";
             printBuffer(Rx, responseMsg);
+        }
+
+        if (CommandInterface::pldmType == "amdMctpSfs")
+        {
+           std::cout << "pldmtool: ";
+           size_t printLen = std::min(responseMsg.size(), static_cast<size_t>(32));
+           std::vector<uint8_t> partialMsg(responseMsg.begin(), responseMsg.begin() + printLen);
+           printBuffer(Rx, partialMsg);
         }
     }
 
