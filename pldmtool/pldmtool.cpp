@@ -5,6 +5,7 @@
 #include "pldm_fw_update_cmd.hpp"
 #include "pldm_platform_cmd.hpp"
 #include "pldmtool/oem/ibm/pldm_oem_ibm.hpp"
+#include "pldmtool/oem/amd/pldm_oem_amd.hpp"
 
 #include <CLI/CLI.hpp>
 
@@ -134,6 +135,10 @@ int main(int argc, char** argv)
 
 #ifdef OEM_IBM
     pldmtool::oem_ibm::registerCommand(app);
+#endif
+
+#ifdef OEM_AMD
+    pldmtool::oem_amd::registerCommand(app);
 #endif
 
     CLI11_PARSE(app, argc, argv);
