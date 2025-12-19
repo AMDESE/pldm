@@ -30,6 +30,7 @@ namespace pldmtool
 namespace helper
 {
 
+constexpr uint8_t POLL_INTERVAL = 5;
 constexpr uint8_t PLDM_ENTITY_ID = 8;
 using ordered_json = nlohmann::ordered_json;
 
@@ -116,7 +117,8 @@ class CommandInterface
     virtual void exec();
 
     int pldmSendRecv(std::vector<uint8_t>& requestMsg,
-                     std::vector<uint8_t>& responseMsg);
+                     std::vector<uint8_t>& responseMsg,
+                     uint16_t pollInterval = POLL_INTERVAL);
 
     /**
      * @brief get MCTP endpoint ID
@@ -160,6 +162,7 @@ class CommandInterface
     uint8_t numRetries = 0;
     bool mctpPreAllocTag = false;
     uint8_t mctpNetworkId = 1;
+    uint16_t pollInterval = POLL_INTERVAL;
 };
 
 } // namespace helper
