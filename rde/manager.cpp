@@ -29,6 +29,12 @@ Manager::Manager(sdbusplus::bus::bus& bus, sdeventplus::Event& event,
     objManager_ =
         std::make_unique<sdbusplus::server::manager_t>(bus_, DeviceObjectPath);
 
+#ifdef OEM_AMD
+    // Initialize Cache Manager D-Bus object
+    cacheManagerObj_ = std::make_unique<CacheManagerObject>(
+        bus_, "/xyz/openbmc_project/RDE/CacheManager");
+#endif
+
     // match for all RDEDeviceDetected signals
     signalMatch_ = std::make_unique<sdbusplus::bus::match_t>(
         bus_,
@@ -48,11 +54,27 @@ Manager::Manager(sdbusplus::bus::bus& bus, sdeventplus::Event& event,
                  "UUID", devUUID, "EID", static_cast<int>(signalEid), "TID",
                  static_cast<int>(signalTid));
 
-            if (!eidMap_.count(signalEid))
+            auto it = eidMap_.find(signalEid);
+            if (it == eidMap_.end())
             {
                 this->createDeviceDbusObject(signalEid, devUUID, signalTid,
                                              pdrPayloads);
             }
+#ifdef OEM_AMD
+            else
+            {
+                auto& context = it->second;
+
+                if (context.uuid == devUUID && context.devicePtr)
+                {
+                    info(
+                        "RDE: Same device detected (UUID={UUID}, EID={EID}), refreshing to enable cache replay",
+                        "UUID", devUUID, "EID", static_cast<int>(signalEid));
+
+                    context.devicePtr->refreshDeviceInfo();
+                }
+            }
+#endif
         });
 }
 
@@ -76,6 +98,10 @@ void Manager::createDeviceDbusObject(
         std::make_shared<Device>(bus_, event_, path, instanceIdDb_, handler_,
                                  devEID, tid, devUUID, pdrPayloads);
 
+#ifdef OEM_AMD
+    devicePtr->setManager(this);
+#endif
+
     DeviceContext context;
     context.uuid = devUUID;
     context.deviceEID = devEID;
@@ -90,64 +116,47 @@ void Manager::createDeviceDbusObject(
     eidMap_[devEID] = std::move(context);
 
     devicePtr->refreshDeviceInfo();
-#ifdef OEM_AMD
-    // match for all RDEReplayComplete signals
-    cacheCompleteSignal_ = std::make_unique<sdbusplus::bus::match_t>(
-        bus_,
-        sdbusplus::bus::match::rules::type::signal() +
-            sdbusplus::bus::match::rules::member("RDEReplayComplete") +
-            sdbusplus::bus::match::rules::interface(
-                "xyz.openbmc_project.RDE.CacheManager") +
-            sdbusplus::bus::match::rules::path(
-                "/xyz/openbmc_project/CacheManager"),
-        [this](sdbusplus::message::message& msg) {
-            pldm::UUID devUUID;
-            pldm::eid devEid;
-
-            msg.read(devUUID);
-            devEid = getEidFromUuid(devUUID);
-            if (devEid == INVALID_EID)
-            {
-                error(
-                    "RDEReplayComplete: Erro no matching EID found for UUID '{UUID}'",
-                    "UUID", devUUID);
-                return;
-            }
-
-            uint32_t operationID = nextOperationId();
-            OperationType operationType = OperationType::UPDATE;
-            std::string subURI = "Oem/AMD/SocConfiguration/Token";
-            std::string payload = "";
-            PayloadFormatType payloadFormat = PayloadFormatType::Inline;
-            EncodingFormatType encodingType = EncodingFormatType::JSON;
-            std::string sessionID = getJSONSchema();
-            if (sessionID.empty())
-            {
-                error("RDEReplayComplete: Cannot find session ID");
-                return;
-            }
-
-            std::string taskPathStr =
-                "/xyz/openbmc_project/RDE/OperationTask/" + std::to_string(1);
-            ObjectPath objPath{taskPathStr};
-
-            OperationInfo opInfo{operationID,   operationType, subURI,
-                                 devUUID,       devEid,        payload,
-                                 payloadFormat, encodingType,  sessionID,
-                                 taskPathStr};
-
-            opSession_ = std::make_unique<OperationSession>(
-                eidMap_[devEid].devicePtr, opInfo);
-            if (!opSession_)
-            {
-                error("RDEReplayComplete: Failed to send zero length request");
-                return;
-            }
-
-            opSession_->doOperationInit();
-        });
-#endif
 }
+
+#ifdef OEM_AMD
+uint32_t Manager::getNextAvailableOperationId()
+{
+    uint32_t operationId = 1;
+    const uint32_t startId = operationId;
+
+    // Find the next available operation ID by checking taskMap_
+    // Start from 1 and increment until we find an ID that's not in use
+    while (taskMap_.find(operationId) != taskMap_.end())
+    {
+        operationId++;
+
+        // Prevent infinite loop: if we've wrapped around to the start ID,
+        // it means all IDs are in use (extremely unlikely in practice)
+        if (operationId == 0 || operationId == startId)
+        {
+            error(
+                "RDE: All operation IDs are in use (checked {COUNT} tasks), cannot generate new ID",
+                "COUNT", taskMap_.size());
+            // Return 0 as error indicator (caller should handle this)
+            return 0;
+        }
+    }
+
+    info(
+        "RDE: Generated next available operationID={OID} (checked {COUNT} existing tasks)",
+        "OID", operationId, "COUNT", taskMap_.size());
+
+    return operationId;
+}
+
+void Manager::registerOperationTask(uint32_t operationID,
+                                    std::shared_ptr<OperationTaskIface> task)
+{
+    taskMap_[operationID] = task;
+    info("RDE: Registered OperationTask with operationID={OID}", "OID",
+         operationID);
+}
+#endif
 
 DeviceContext* Manager::getDeviceContext(eid devEID)
 {

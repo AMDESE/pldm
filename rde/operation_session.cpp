@@ -18,13 +18,6 @@ PHOSPHOR_LOG2_USING;
 constexpr uint32_t maxBufferSize = 64 * 1024;
 constexpr uint8_t CONTAINS_REQ_PAYLOAD = 1;
 
-#ifdef OEM_AMD
-constexpr auto rdeCacheManagerService = "xyz.openbmc_project.RDE.CacheManager";
-constexpr auto rdeCacheManagerPath = "/xyz/openbmc_project/CacheManager";
-constexpr auto rdeCacheManagerInterface =
-    "xyz.openbmc_project.RDE.CacheManager";
-#endif
-
 namespace pldm::rde
 {
 
@@ -255,20 +248,6 @@ std::string OperationSession::getJsonStrPayload()
 
     return decoder.getOutput();
 }
-
-#ifdef OEM_AMD
-void emitCacheConsumedSignal(std::string matchString, std::string deviceUUID)
-{
-    auto& bus = pldm::utils::DBusHandler::getBus();
-    auto method =
-        bus.new_method_call(rdeCacheManagerService, rdeCacheManagerPath,
-                            rdeCacheManagerInterface, "RegisterSignal");
-
-    method.append(deviceUUID, matchString);
-
-    auto reply = bus.call(method, dbusTimeout);
-}
-#endif
 
 void OperationSession::doOperationInit()
 {
@@ -577,10 +556,6 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
                         {
                             info("Multipartsend completed");
                             multiPartTransferFlag = false;
-#ifdef OEM_AMD
-                            emitCacheConsumedSignal(oipInfo.opTaskPath,
-                                                    oipInfo.deviceUUID);
-#endif
                             emitTaskUpdatedSignal(
                                 device_->getBus(), oipInfo.opTaskPath, "",
                                 static_cast<uint16_t>(
@@ -612,10 +587,6 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
                     "RID", currentResourceId_, "ERR", ex.what());
             }
         }
-#ifdef OEM_AMD
-        if (!oipInfo.payload.empty())
-            emitCacheConsumedSignal(oipInfo.opTaskPath, oipInfo.deviceUUID);
-#endif
         emitTaskUpdatedSignal(
             device_->getBus(), oipInfo.opTaskPath, "",
             static_cast<uint16_t>(OpState::OperationCompleted));

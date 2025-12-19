@@ -1,14 +1,14 @@
 #include "device.hpp"
 
-#include <filesystem>
-#include <iostream>
-
 #ifdef OEM_AMD
-constexpr auto rdeCacheManagerService = "xyz.openbmc_project.RDE.CacheManager";
-constexpr auto rdeCacheManagerPath = "/xyz/openbmc_project/CacheManager";
-constexpr auto rdeCacheManagerInterface =
-    "xyz.openbmc_project.RDE.CacheManager";
+#include "manager.hpp"
+#include "rde_cache_manager.hpp"
+#include "utils.hpp"
+
+#include <sdbusplus/bus/match.hpp>
 #endif
+
+#include <filesystem>
 
 namespace pldm::rde
 {
@@ -92,102 +92,16 @@ void Device::refreshDeviceInfo()
     deviceUpdated();
 }
 
-#ifdef OEM_AMD
-inline std::string loadProcessorURI(std::string devUUID)
-{
-    constexpr const char* rdeDeviceMetadataFile =
-        "/etc/pldm/rde_device_metadata.json";
-
-    std::string schema;
-    std::string deviceId;
-
-    if (!std::filesystem::exists(rdeDeviceMetadataFile))
-    {
-        error("RDE: Device metadata file {FILE} not found: ", "FILE",
-              rdeDeviceMetadataFile);
-        return "";
-    }
-
-    std::ifstream file(rdeDeviceMetadataFile);
-    if (!file.is_open())
-    {
-        error("RDE: Failed to open device metadata file:{FILE} ", "FILE",
-              rdeDeviceMetadataFile);
-        return "";
-    }
-
-    try
-    {
-        if (file.peek() == std::ifstream::traits_type::eof())
-        {
-            error("RDE: Device metadata file{FILE} is empty: ", "FILE",
-                  rdeDeviceMetadataFile);
-            return "";
-        }
-
-        nlohmann::json jsonData;
-        file >> jsonData;
-
-        if (!jsonData.is_object())
-        {
-            error(
-                "RDE: Device metadata file does not contain a valid JSON object.");
-            return "";
-        }
-
-        for (const auto& [jsonSchema, deviceEntries] : jsonData.items())
-        {
-            if (!deviceEntries.is_object())
-            {
-                error("RDE: Invalid schema section {SCHEMA} ", "SCHEMA",
-                      jsonSchema);
-                continue;
-            }
-
-            for (const auto& [jsonDeviceId, deviceInfo] : deviceEntries.items())
-            {
-                if (!deviceInfo.contains("UUIDs") ||
-                    !deviceInfo["UUIDs"].is_array())
-                {
-                    error(
-                        "RDE: Missing or invalid 'UUIDs' for {SCHEMA} {DEVID}",
-                        "SCHEMA", jsonSchema, "DEVID", jsonDeviceId);
-                    continue;
-                }
-
-                const std::string deviceKeyFromJson =
-                    jsonSchema + "/" + jsonDeviceId + "/";
-
-                for (const auto& uuid : deviceInfo["UUIDs"])
-                {
-                    if (!uuid.is_string())
-                    {
-                        error("RDE: Invalid UUID format in {KEY}", "KEY",
-                              deviceKeyFromJson);
-                        continue;
-                    }
-                    if (devUUID == uuid.get<std::string>())
-                    {
-                        return deviceKeyFromJson;
-                    }
-                }
-            }
-        }
-    }
-    catch (const std::exception& e)
-    {
-        error("RDE: Unexpected error while reading device metadata file:{MSG} ",
-              "MSG", e.what());
-        return "";
-    }
-
-    return "";
-}
-#endif
-
 void Device::performRDEOperation(const OperationInfo& oipInfo)
 {
     info("Operation Session Started");
+
+#ifdef OEM_AMD
+    if (shouldDeferOperation(oipInfo))
+    {
+        return;
+    }
+#endif
 
     std::shared_ptr<Device> self;
     try
@@ -221,35 +135,358 @@ void Device::performRDEOperation(const OperationInfo& oipInfo)
     {
         error("OperationSession setup failed: Msg={MSG}", "MSG", e.what());
 #ifdef OEM_AMD
-        auto& bus = pldm::utils::DBusHandler::getBus();
-        auto method =
-            bus.new_method_call(rdeCacheManagerService, rdeCacheManagerPath,
-                                rdeCacheManagerInterface, "CreateCache");
-
-        const std::string redfishRootURI = "/redfish/v1/Systems/system/";
-        const std::string redfishProcessorURI =
-            loadProcessorURI(oipInfo.deviceUUID);
-        if (redfishProcessorURI.empty())
+        // Cache failed operations (skip replayed operations to avoid infinite
+        // loop)
+        if (!isReplayOperation(oipInfo) && canCacheOperation(oipInfo))
         {
-            error("Caching failed. Unable to find Processor URI");
-            return;
+            cacheOperation(oipInfo, "failed");
         }
-
-        const std::string fullURI =
-            redfishRootURI + redfishProcessorURI + oipInfo.targetURI;
-
-        if (oipInfo.operationType == OperationType::UPDATE)
-            method.append(deviceUUID(), "patch", fullURI, oipInfo.payload);
-        else
-            return;
-
-        info("Caching the data for RDE Device of EID={EID} and UUID={UUID}",
-             "EID", oipInfo.eid, "UUID", oipInfo.deviceUUID);
-        auto reply = bus.call(method, dbusTimeout);
 #endif
         return;
     }
 }
+
+#ifdef OEM_AMD
+bool Device::shouldDeferOperation(const OperationInfo& oipInfo)
+{
+    if (isReplayOperation(oipInfo))
+    {
+        return false;
+    }
+
+    if (isReplayInProgress_)
+    {
+        if (canCacheOperation(oipInfo))
+        {
+            cacheOperation(oipInfo, "during replay");
+            return true; // Indicate that it has been deferred
+        }
+    }
+    return false;
+}
+
+bool Device::isReplayOperation(const OperationInfo& opInfo) const
+{
+    return (currentReplayOperationId_ != 0 &&
+            opInfo.operationID == currentReplayOperationId_);
+}
+
+bool Device::canCacheOperation(const OperationInfo& opInfo) const
+{
+    std::string processorURI = loadProcessorURI(opInfo.deviceUUID);
+    if (processorURI.empty())
+    {
+        info(
+            "RDE Cache: Device UUID={UUID} not found in rde_device_metadata.json, skipping cache",
+            "UUID", opInfo.deviceUUID);
+        return false;
+    }
+
+    // Don't cache BIOS zero length command
+    if (opInfo.targetURI == SocConfigurationTokenURI &&
+        opInfo.payload.empty() && opInfo.operationType == OperationType::UPDATE)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool Device::cacheOperation(const OperationInfo& opInfo,
+                            const std::string& context)
+{
+    auto& cacheManager = RDECacheManager::getInstance();
+    if (!cacheManager.cacheOperation(opInfo))
+    {
+        error("RDE Cache: Failed to cache operation for device UUID={UUID}",
+              "UUID", opInfo.deviceUUID);
+        return false;
+    }
+
+    if (isReplayInProgress_)
+    {
+        info(
+            "RDE Cache: Cached operation {CONTEXT} for device UUID={UUID}, EID={EID} (will be processed after replay completes)",
+            "CONTEXT", context, "UUID", opInfo.deviceUUID, "EID", opInfo.eid);
+    }
+    else
+    {
+        info(
+            "RDE Cache: Successfully cached {CONTEXT} operation for device UUID={UUID}, EID={EID}",
+            "CONTEXT", context, "UUID", opInfo.deviceUUID, "EID", opInfo.eid);
+    }
+    return true;
+}
+
+void Device::replayCachedOperations()
+{
+    if (isReplayInProgress_)
+    {
+        return;
+    }
+
+    isReplayInProgress_ = true;
+
+    // Setup signal match to listen for TaskUpdated signals
+    if (!taskUpdatedMatch_)
+    {
+        std::weak_ptr<Device> weakSelf = shared_from_this();
+        taskUpdatedMatch_ = std::make_unique<sdbusplus::bus::match_t>(
+            bus_,
+            sdbusplus::bus::match::rules::type::signal() +
+                sdbusplus::bus::match::rules::member("TaskUpdated") +
+                sdbusplus::bus::match::rules::interface(
+                    "xyz.openbmc_project.RDE.OperationTask"),
+            [weakSelf](sdbusplus::message::message& msg) {
+                auto self = weakSelf.lock();
+                if (!self)
+                {
+                    return;
+                }
+
+                std::string path = msg.get_path();
+
+                if (self->currentReplayOperationId_ == 0)
+                {
+                    return;
+                }
+
+                std::string expectedPath =
+                    "/xyz/openbmc_project/RDE/OperationTask/" +
+                    std::to_string(self->currentReplayOperationId_);
+                if (path != expectedPath)
+                {
+                    return;
+                }
+
+                // Extract return code from signal
+                std::map<std::string, std::variant<std::string, uint16_t>>
+                    changed;
+                msg.read(changed);
+
+                auto it = changed.find("return_code");
+                if (it == changed.end())
+                {
+                    return;
+                }
+
+                uint16_t returnCode = std::get<uint16_t>(it->second);
+
+                if (returnCode ==
+                    static_cast<uint16_t>(OpState::OperationCompleted))
+                {
+                    // Success: delete cache entry
+                    if (self->currentReplayTimestamp_ != 0)
+                    {
+                        RDECacheManager::getInstance().completeOperation(
+                            self->deviceUUID(), self->currentReplayTimestamp_);
+                        self->currentReplayTimestamp_ = 0;
+                    }
+                    info(
+                        "RDE Cache Replay: Operation {OID} succeeded (TaskStatus=OperationCompleted), cache entry removed, processing next operation",
+                        "OID", self->currentReplayOperationId_);
+
+                    self->currentReplayOperationId_ = 0;
+                    self->processNextCachedOperation();
+                }
+                else if (returnCode ==
+                             static_cast<uint16_t>(OpState::OperationFailed) ||
+                         returnCode ==
+                             static_cast<uint16_t>(OpState::Cancelled) ||
+                         returnCode == static_cast<uint16_t>(OpState::TimedOut))
+                {
+                    // Failure: mark as failed and continue to next
+                    if (self->currentReplayTimestamp_ != 0)
+                    {
+                        RDECacheManager::getInstance().markOperationAsFailed(
+                            self->deviceUUID(), self->currentReplayTimestamp_);
+                        self->currentReplayTimestamp_ = 0;
+                    }
+                    info(
+                        "RDE Cache Replay: Operation {OID} failed with TaskStatus={CODE}, marked as failed, processing next operation",
+                        "OID", self->currentReplayOperationId_, "CODE",
+                        returnCode);
+
+                    self->currentReplayOperationId_ = 0;
+                    self->processNextCachedOperation();
+                }
+                else
+                {
+                    info(
+                        "RDE Cache Replay: Operation {OID} status updated to {CODE}, waiting for final state",
+                        "OID", self->currentReplayOperationId_, "CODE",
+                        returnCode);
+                }
+            });
+    }
+
+    // Start processing the first cache entry
+    processNextCachedOperation();
+}
+
+void Device::processNextCachedOperation()
+{
+    auto& cacheManager = RDECacheManager::getInstance();
+    auto entryOpt = cacheManager.markNextPendingForProcessing(deviceUUID());
+
+    if (!entryOpt.has_value())
+    {
+        // No more pending cached operations, replay is complete
+        info(
+            "RDE Cache Replay: All cached operations processed for UUID={UUID}, sending BIOS zero length command",
+            "UUID", deviceUUID());
+        currentReplayOperationId_ = 0;
+        currentReplayTimestamp_ = 0;
+        isReplayInProgress_ = false;
+        sendBiosZeroLengthCommand();
+        return;
+    }
+
+    CacheEntry entry = *entryOpt;
+    currentReplayTimestamp_ = entry.timestamp;
+
+    info(
+        "RDE Cache Replay: Replaying operation type={TYPE}, URI={URI}, payload={PAYLOAD}, timestamp={TS}",
+        "TYPE", static_cast<int>(entry.operationType), "URI", entry.targetURI,
+        "PAYLOAD", entry.payload, "TS", entry.timestamp);
+
+    try
+    {
+        if (!manager_)
+        {
+            error(
+                "RDE Cache Replay: Manager not set, cannot generate operation ID, stopping replay for UUID={UUID}",
+                "UUID", deviceUUID());
+            stopReplay();
+            return;
+        }
+
+        uint32_t operationID = manager_->getNextAvailableOperationId();
+        if (operationID == 0)
+        {
+            error(
+                "RDE Cache Replay: Failed to generate operation ID (all IDs in use), stopping replay for UUID={UUID}",
+                "UUID", deviceUUID());
+            stopReplay();
+            return;
+        }
+
+        currentReplayOperationId_ = operationID;
+
+        OperationInfo opInfo =
+            RDECacheManager::toOperationInfo(entry, operationID, eid());
+
+        auto task = std::make_shared<OperationTask>(bus_, opInfo.opTaskPath);
+        manager_->registerOperationTask(operationID, task);
+        performRDEOperation(opInfo);
+    }
+    catch (const std::exception& e)
+    {
+        error(
+            "RDE Cache Replay: Failed to replay operation for UUID={UUID}: {MSG}, continuing with next",
+            "UUID", deviceUUID(), "MSG", e.what());
+
+        // Mark failed-to-start operation as complete so we can move to next
+        cacheManager.completeOperation(deviceUUID(), currentReplayTimestamp_);
+        currentReplayOperationId_ = 0;
+        currentReplayTimestamp_ = 0;
+        processNextCachedOperation();
+    }
+}
+
+void Device::stopReplay()
+{
+    RDECacheManager::getInstance().resetProcessingToPending(deviceUUID());
+    currentReplayOperationId_ = 0;
+    currentReplayTimestamp_ = 0;
+    isReplayInProgress_ = false;
+}
+
+void Device::sendBiosZeroLengthCommand()
+{
+    // Check if UUID exists in rde_device_metadata.json
+    std::string processorURI = loadProcessorURI(deviceUUID());
+    if (processorURI.empty())
+    {
+        info(
+            "RDE Cache Replay: Device UUID={UUID} not found in rde_device_metadata.json, skipping BIOS zero length command",
+            "UUID", deviceUUID());
+        return;
+    }
+
+    // Send BIOS zero length command when cache replay is complete
+    if (!manager_)
+    {
+        error(
+            "RDE Cache Replay: Manager not set, cannot send BIOS zero length command for UUID={UUID}",
+            "UUID", deviceUUID());
+        return;
+    }
+
+    try
+    {
+        uint32_t operationID = manager_->getNextAvailableOperationId();
+        if (operationID == 0)
+        {
+            error(
+                "RDE Cache Replay: Failed to generate operation ID for BIOS zero length command, UUID={UUID}",
+                "UUID", deviceUUID());
+            return;
+        }
+
+        OperationType operationType = OperationType::UPDATE;
+        std::string subURI = SocConfigurationTokenURI;
+        std::string payload = "";
+        PayloadFormatType payloadFormat = PayloadFormatType::Inline;
+        EncodingFormatType encodingType = EncodingFormatType::JSON;
+        std::string sessionID = manager_->getJSONSchema();
+        if (sessionID.empty())
+        {
+            error(
+                "RDE Cache Replay: Cannot find session ID for BIOS zero length command, UUID={UUID}",
+                "UUID", deviceUUID());
+            return;
+        }
+
+        std::string taskPathStr = "/xyz/openbmc_project/RDE/OperationTask/" +
+                                  std::to_string(operationID);
+
+        OperationInfo opInfo{operationID,   operationType, subURI,
+                             deviceUUID(),  eid(),         payload,
+                             payloadFormat, encodingType,  sessionID,
+                             taskPathStr};
+
+        auto task = std::make_shared<OperationTask>(bus_, opInfo.opTaskPath);
+        manager_->registerOperationTask(operationID, task);
+
+        std::shared_ptr<Device> self = shared_from_this();
+        opSession_ = std::make_unique<OperationSession>(self, opInfo);
+        if (!opSession_)
+        {
+            error(
+                "RDE Cache Replay: Failed to create OperationSession for BIOS zero length command, UUID={UUID}",
+                "UUID", deviceUUID());
+            return;
+        }
+
+        info(
+            "RDE Cache Replay: Sending BIOS zero length command for UUID={UUID}, OperationID={OID}",
+            "UUID", deviceUUID(), "OID", operationID);
+        opSession_->doOperationInit();
+    }
+    catch (const std::exception& e)
+    {
+        error(
+            "RDE Cache Replay: Failed to send BIOS zero length command for UUID={UUID}: {MSG}",
+            "UUID", deviceUUID(), "MSG", e.what());
+    }
+}
+
+void Device::setManager(Manager* manager)
+{
+    manager_ = manager;
+}
+#endif
 
 Metadata& Device::getMetadata()
 {

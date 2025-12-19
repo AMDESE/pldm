@@ -115,6 +115,7 @@ endif
 if get_option('oem-amd').allowed()
     add_project_arguments('-DOEM_AMD', language: 'cpp')
 endif
+
 conf_data.set(
     'NUMBER_OF_REQUEST_RETRIES',
     get_option('number-of-request-retries'),
@@ -239,6 +240,12 @@ deps = [
 ]
 
 oem_files = []
+
+if get_option('oem-amd').allowed()
+    subdir('oem/amd')
+    deps += oem_amd_dep
+endif
+
 if get_option('oem-ampere').allowed()
     subdir('oem/ampere')
 endif

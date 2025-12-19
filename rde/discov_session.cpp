@@ -4,6 +4,9 @@
 #include "device.hpp"
 #include "dictionary_manager.hpp"
 #include "requester/handler.hpp"
+#ifdef OEM_AMD
+#include "rde_cache_manager.hpp"
+#endif
 
 extern "C"
 {
@@ -353,6 +356,10 @@ void DiscoverySession::runNextDictionaryCommand(size_t index)
         info("RDE: All schema dictionary commands completed.");
         // Update negotiation status
         device_->negotiationStatus(device_->NegotiationStatus::Success, false);
+#ifdef OEM_AMD
+        info("RDE: Discovery completed successfully, triggering cache replay for UUID={UUID}", "UUID", device_->deviceUUID());
+        device_->replayCachedOperations();
+#endif
         return;
     }
 

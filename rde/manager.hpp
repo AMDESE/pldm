@@ -2,6 +2,7 @@
 
 #ifdef OEM_AMD
 #include "operation_session.hpp"
+#include "cache_manager_dbus.hpp"
 #endif
 #include "operation_task.hpp"
 #include "requester/handler.hpp"
@@ -242,6 +243,20 @@ class Manager :
                                 const PdrPayloadList& pdrPayloads);
 
     /**
+     * @brief Register an operation task with the manager.
+     * @param[in] operationID - Unique identifier for the operation.
+     * @param[in] task - Pointer to the OperationTask instance.
+     */
+    void registerOperationTask(uint32_t operationID,
+                               std::shared_ptr<OperationTaskIface> task);
+
+    /**
+     * @brief Get the next available operation ID.
+     * @return uint32_t - The next available operation ID, or 0 if none available.
+     */
+    uint32_t getNextAvailableOperationId();
+
+    /**
      * @brief Retrieve the map of currently active OperationTask D-Bus objects.
      *
      * This method provides direct access to the internal task registry,
@@ -364,8 +379,7 @@ class Manager :
         taskMap_;
     std::unique_ptr<sdbusplus::server::manager_t> objManager_;
 #ifdef OEM_AMD
-    std::unique_ptr<sdbusplus::bus::match_t> cacheCompleteSignal_;
-    std::unique_ptr<OperationSession> opSession_;
+    std::unique_ptr<CacheManagerObject> cacheManagerObj_;
 #endif
 };
 
