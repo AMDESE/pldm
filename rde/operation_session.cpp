@@ -526,6 +526,9 @@ void OperationSession::doOperationInit()
     {
         error("Failed to send request OperationInit EID '{EID}', RC '{RC}'",
               "EID", eid_, "RC", rc);
+        createCache(oipInfo.targetURI, oipInfo.operationType, oipInfo.payload,
+                    oipInfo.deviceUUID);
+        updateState(OpState::OperationFailed);
         device_->getInstanceIdDb().free(eid_, instanceId);
         throw std::runtime_error("Failed to send request OperationInit");
     }
