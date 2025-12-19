@@ -15,6 +15,10 @@ if get_option('oem-ibm').allowed()
     sources += ['oem/ibm/pldm_oem_ibm.cpp']
 endif
 
+if get_option('oem-amd').allowed()
+    sources += ['oem/amd/pldm_oem_amd.cpp']
+endif
+
 executable(
     'pldmtool',
     sources,
