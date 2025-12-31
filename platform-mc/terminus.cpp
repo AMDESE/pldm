@@ -549,6 +549,7 @@ std::shared_ptr<pldm_compact_numeric_sensor_pdr>
     parsedPdr->critical_low = pdr->critical_low;
     parsedPdr->fatal_high = pdr->fatal_high;
     parsedPdr->fatal_low = pdr->fatal_low;
+    std::memcpy(parsedPdr->sensor_name, pdr->sensor_name, sizeof(parsedPdr->sensor_name));
     return parsedPdr;
 }
 

@@ -56,6 +56,8 @@ class PlatformManager
      */
     exec::task<int> getPDRs(std::shared_ptr<Terminus> terminus);
 
+    exec::task<int> getPDRsFromJson(std::shared_ptr<Terminus> terminus);
+
     /** @brief Fetch PDR from terminus
      *
      *  @param[in] tid - Destination TID
