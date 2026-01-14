@@ -12,6 +12,8 @@ project(
     ],
 )
 
+oem_amd_pldm_sources = []
+
 # Wno-psabi reduces the number of "Note:" messages when cross-compiling some STL
 # stuff for ARM. See https://stackoverflow.com/questions/48149323/strange-gcc-warning-when-compiling-qt-project
 # Basically, gcc 6 and gcc 7 are not ABI compatible, but since the whole OpenBMC
@@ -248,6 +250,10 @@ if get_option('libpldmresponder').allowed()
     deps += [libpldmresponder_dep]
 endif
 
+if get_option('oem-amd').enabled()
+    oem_amd_pldm_sources += files('oem/amd/platform-mc/platform_manager.cpp')
+endif
+
 executable(
     'pldmd',
     'pldmd/pldmd.cpp',
@@ -279,7 +285,9 @@ executable(
     'rde/resource_registry.cpp',
     'rde/utils.cpp',
     oem_files,
+    oem_amd_pldm_sources,
     'requester/mctp_endpoint_discovery.cpp',
+    include_directories: include_directories('platform-mc'),
     implicit_include_directories: false,
     dependencies: deps,
     install: true,

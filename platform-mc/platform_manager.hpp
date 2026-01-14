@@ -56,6 +56,10 @@ class PlatformManager
      */
     exec::task<int> getPDRs(std::shared_ptr<Terminus> terminus);
 
+#ifdef OEM_AMD
+    exec::task<int> get_pdr_from_json(std::shared_ptr<Terminus> terminus);
+#endif
+
     /** @brief Fetch PDR from terminus
      *
      *  @param[in] tid - Destination TID
