@@ -98,6 +98,22 @@ exec::task<int> PlatformManager::initTerminus()
 
             terminus->parseTerminusPDRs();
         }
+#ifdef OEM_AMD
+        else
+        {
+            // read from JSON file
+            auto rc = co_await get_pdr_from_json(terminus);
+            if (rc)
+            {
+                lg2::error(
+                    "Failed to fetch PDRs for terminus with TID from JSON: {TID}, error: {ERROR}",
+                    "TID", tid, "ERROR", rc);
+                continue; // Continue to next terminus
+            }
+
+            terminus->parseTerminusPDRs();
+        }
+#endif
 
         /**
          * Need terminus name from PDRs before updating Inventory object with
