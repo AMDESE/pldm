@@ -105,6 +105,10 @@ void NumericSensor::setSensorUnit(uint8_t baseUnit)
     useMetricInterface = false;
     switch (baseUnit)
     {
+        case PLDM_SENSOR_UNIT_NONE:
+            sensorNameSpace = "/xyz/openbmc_project/sensors/misc/";
+            sensorUnit = SensorUnit::None;
+            break;
         case PLDM_SENSOR_UNIT_DEGRESS_C:
             sensorNameSpace = "/xyz/openbmc_project/sensors/temperature/";
             sensorUnit = SensorUnit::DegreesC;
@@ -124,6 +128,10 @@ void NumericSensor::setSensorUnit(uint8_t baseUnit)
         case PLDM_SENSOR_UNIT_WATTS:
             sensorNameSpace = "/xyz/openbmc_project/sensors/power/";
             sensorUnit = SensorUnit::Watts;
+            break;
+        case PLDM_SENSOR_UNIT_HERTZ:
+            sensorNameSpace = "/xyz/openbmc_project/sensors/frequency/";
+            sensorUnit = SensorUnit::Hertz;
             break;
         case PLDM_SENSOR_UNIT_JOULES:
             sensorNameSpace = "/xyz/openbmc_project/sensors/energy/";
