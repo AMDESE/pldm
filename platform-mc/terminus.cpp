@@ -573,7 +573,20 @@ std::shared_ptr<pldm_compact_numeric_sensor_pdr>
         // Handle error: input data too small to contain valid pdr
         return nullptr;
     }
-    auto parsedPdr = std::make_shared<pldm_compact_numeric_sensor_pdr>();
+
+    std::shared_ptr<pldm_compact_numeric_sensor_pdr> parsedPdr;
+
+    if (pdr->sensor_name_length > 1) {
+      size_t totalSize = offsetof(pldm_compact_numeric_sensor_pdr, sensor_name) +
+        pdr->sensor_name_length;
+      auto completeBuffer = new uint8_t[totalSize];
+
+      parsedPdr = std::shared_ptr<pldm_compact_numeric_sensor_pdr>(
+         reinterpret_cast<pldm_compact_numeric_sensor_pdr*>(completeBuffer),
+         [] (pldm_compact_numeric_sensor_pdr* p) {delete [] reinterpret_cast<uint8_t *>(p);});
+    } else {
+       parsedPdr = std::make_shared<pldm_compact_numeric_sensor_pdr>();
+    }
 
     parsedPdr->hdr = pdr->hdr;
     parsedPdr->terminus_handle = pdr->terminus_handle;
@@ -592,6 +605,12 @@ std::shared_ptr<pldm_compact_numeric_sensor_pdr>
     parsedPdr->critical_low = pdr->critical_low;
     parsedPdr->fatal_high = pdr->fatal_high;
     parsedPdr->fatal_low = pdr->fatal_low;
+
+    if (pdr->sensor_name_length > 0) {
+     std::copy(pdr->sensor_name, pdr->sensor_name + pdr->sensor_name_length,
+       parsedPdr->sensor_name);
+    }
+
     return parsedPdr;
 }
 
