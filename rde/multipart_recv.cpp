@@ -12,8 +12,8 @@ PHOSPHOR_LOG2_USING;
 namespace pldm::rde
 {
 
-MultipartReceiver::MultipartReceiver(std::shared_ptr<Device> device,
-                                     uint8_t eid, uint32_t transferHandle) :
+MultipartReceiver::MultipartReceiver(std::weak_ptr<Device> device, uint8_t eid,
+                                     uint32_t transferHandle) :
     device_(std::move(device)), eid_(eid), transferHandle_(transferHandle)
 {}
 
@@ -32,7 +32,15 @@ void MultipartReceiver::start(
 
 void MultipartReceiver::sendReceiveRequest(uint32_t handle)
 {
-    uint8_t instanceId = device_->getInstanceIdDb().next(eid_);
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        if (onFailure_)
+            onFailure_("Device expired");
+        return;
+    }
+
+    uint8_t instanceId = dev->getInstanceIdDb().next(eid_);
 
     lg2::debug("RDE: Allocated Instance ID={ID} for EID={EID}", "ID",
                instanceId, "EID", eid_);
@@ -52,7 +60,7 @@ void MultipartReceiver::sendReceiveRequest(uint32_t handle)
                                               transferOperation_, requestMsg);
     if (rc != PLDM_SUCCESS)
     {
-        device_->getInstanceIdDb().free(eid_, instanceId);
+        dev->getInstanceIdDb().free(eid_, instanceId);
         lg2::error("RDE: Request encoding failed: RC={RC}, EID={EID}", "RC", rc,
                    "EID", eid_);
         if (onFailure_)
@@ -60,7 +68,7 @@ void MultipartReceiver::sendReceiveRequest(uint32_t handle)
         return;
     }
 
-    rc = device_->getHandler()->registerRequest(
+    rc = dev->getHandler()->registerRequest(
         eid_, instanceId, PLDM_RDE, PLDM_RDE_MULTIPART_RECEIVE,
         std::move(request),
         [this](uint8_t /*eid*/, const pldm_msg* msg, size_t len) {
@@ -69,7 +77,7 @@ void MultipartReceiver::sendReceiveRequest(uint32_t handle)
 
     if (rc)
     {
-        device_->getInstanceIdDb().free(eid_, instanceId);
+        dev->getInstanceIdDb().free(eid_, instanceId);
         lg2::error("RDE: Request registration failed: RC={RC}, EID={EID}", "RC",
                    rc, "EID", eid_);
         if (onFailure_)
@@ -80,6 +88,13 @@ void MultipartReceiver::sendReceiveRequest(uint32_t handle)
 void MultipartReceiver::handleReceiveResp(const pldm_msg* respMsg, size_t rxLen)
 {
     lg2::info("RDE: :handleReceiveResp LEN={LEN}", "LEN", rxLen);
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        if (onFailure_)
+            onFailure_("Device expired");
+        return;
+    }
 
     if (!respMsg || rxLen == 0)
     {
@@ -103,7 +118,7 @@ void MultipartReceiver::handleReceiveResp(const pldm_msg* respMsg, size_t rxLen)
     }
 
     const auto& chunkMeta =
-        device_->getMetadataField("devMaxTransferChunkSizeBytes");
+        dev->getMetadataField("devMaxTransferChunkSizeBytes");
     const auto* chunkSizePtr = std::get_if<uint32_t>(&chunkMeta);
     if (!chunkSizePtr)
     {

@@ -52,7 +52,7 @@ class MultipartReceiver
      * @param eid Target device endpoint ID
      * @param transferHandle Initial dictionary transfer handle
      */
-    MultipartReceiver(std::shared_ptr<Device> device, uint8_t eid,
+    MultipartReceiver(std::weak_ptr<Device> device, uint8_t eid,
                       uint32_t transferHandle);
 
     /**
@@ -100,7 +100,7 @@ class MultipartReceiver
     }
 
   private:
-    std::shared_ptr<Device> device_;             // Target device
+    std::weak_ptr<Device> device_;               // Target device
     uint8_t eid_;                                // Endpoint ID
     uint32_t transferHandle_;                    // Current transfer handle
     std::function<void(std::span<const uint8_t>, const MultipartRcvMeta&)>

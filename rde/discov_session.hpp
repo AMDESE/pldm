@@ -46,7 +46,7 @@ class DiscoverySession
      * @param[in] device A reference to the Device object containing discovery
      * dependencies.
      */
-    explicit DiscoverySession(std::shared_ptr<Device> device);
+    explicit DiscoverySession(std::weak_ptr<Device> device);
 
     DiscoverySession() = delete;
     DiscoverySession(const DiscoverySession&) = delete;
@@ -167,7 +167,7 @@ class DiscoverySession
     void handleGetSchemaDictionaryResp(const pldm_msg* respMsg, size_t rxLen);
 
   private:
-    std::shared_ptr<Device> device_;
+    std::weak_ptr<Device> device_;
     pldm::eid eid_;
     pldm_tid_t tid_;
     bool initialized_ = false;

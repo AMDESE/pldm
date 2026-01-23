@@ -205,6 +205,8 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
         return bus_;
     }
 
+    void shutdown();
+
   private:
     /**
      * @brief Constructs schema resource payload based on discovered resources.
@@ -234,6 +236,7 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
     std::unique_ptr<pldm::rde::DictionaryManager> dictionaryManager_;
     std::unique_ptr<DiscoverySession> discovSession_;
     std::unique_ptr<OperationSession> opSession_;
+    bool shuttingDown_;
 };
 
 } // namespace pldm::rde

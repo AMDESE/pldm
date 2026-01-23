@@ -6,7 +6,7 @@
 namespace pldm::rde
 {
 
-MultipartSender::MultipartSender(std::shared_ptr<Device> device, uint8_t eid,
+MultipartSender::MultipartSender(std::weak_ptr<Device> device, uint8_t eid,
                                  std::vector<uint8_t> dataPayload) :
     device_(std::move(device)), eid_(eid), dataPayload_(dataPayload)
 {}
@@ -34,7 +34,14 @@ void MultipartSender::setTransferFlag(uint8_t flag)
 
 void MultipartSender::sendRequest(uint32_t handle)
 {
-    const auto& meta = device_->getMetadataField("mcMaxTransferChunkSizeBytes");
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        if (onFailure_)
+            onFailure_("Device expired");
+        return;
+    }
+    const auto& meta = dev->getMetadataField("mcMaxTransferChunkSizeBytes");
     const auto* maxChunkSizePtr = std::get_if<uint32_t>(&meta);
     if (!maxChunkSizePtr)
     {
@@ -54,7 +61,14 @@ void MultipartSender::sendRequest(uint32_t handle)
 
 void MultipartSender::sendReceiveRequest(uint32_t handle)
 {
-    const auto& meta = device_->getMetadataField("mcMaxTransferChunkSizeBytes");
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        if (onFailure_)
+            onFailure_("Device expired");
+        return;
+    }
+    const auto& meta = dev->getMetadataField("mcMaxTransferChunkSizeBytes");
     const auto* maxChunkSizePtr = std::get_if<uint32_t>(&meta);
     if (!maxChunkSizePtr)
     {
@@ -89,7 +103,14 @@ bool MultipartSender::sendMultipartCommand(
     uint32_t handle, rde_op_id operationID, uint8_t transferFlag,
     const std::vector<uint8_t>& payload, uint32_t checksum)
 {
-    uint8_t instanceId = device_->getInstanceIdDb().next(eid_);
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        if (onFailure_)
+            onFailure_("Device expired");
+        return false;
+    }
+    uint8_t instanceId = dev->getInstanceIdDb().next(eid_);
 
     uint32_t dataLength = payload.size();
     Request request(sizeof(pldm_msg_hdr) +
@@ -107,13 +128,13 @@ bool MultipartSender::sendMultipartCommand(
         const_cast<uint8_t*>(payload.data()), checksum, requestMsg);
     if (rc != PLDM_SUCCESS)
     {
-        device_->getInstanceIdDb().free(eid_, instanceId);
+        dev->getInstanceIdDb().free(eid_, instanceId);
         if (onFailure_)
             onFailure_("Request encoding failed");
         return false;
     }
 
-    rc = device_->getHandler()->registerRequest(
+    rc = dev->getHandler()->registerRequest(
         eid_, instanceId, PLDM_RDE, PLDM_RDE_MULTIPART_SEND, std::move(request),
         [this](uint8_t, const pldm_msg* msg, size_t len) {
             this->handleSendResp(msg, len);
@@ -121,7 +142,7 @@ bool MultipartSender::sendMultipartCommand(
 
     if (rc)
     {
-        device_->getInstanceIdDb().free(eid_, instanceId);
+        dev->getInstanceIdDb().free(eid_, instanceId);
         if (onFailure_)
             onFailure_("Request registration failed");
         return false;
