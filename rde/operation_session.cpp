@@ -28,13 +28,18 @@ constexpr auto rdeCacheManagerInterface =
 namespace pldm::rde
 {
 
-OperationSession::OperationSession(std::shared_ptr<Device> device,
-                                   struct OperationInfo oipInfo) :
-    device_(std::move(device)), eid_(device_->eid()),
-    currentState_(OpState::Idle), oipInfo(oipInfo)
+OperationSession::OperationSession(std::weak_ptr<Device> device,
+                                   OperationInfo oipInfo) :
+    device_(std::move(device)), oipInfo(oipInfo)
 {
-    info("RDE: OperationSession created for EID={EID},use_count={COUNT}", "EID",
-         static_cast<int>(eid_), "COUNT", device_.use_count());
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        eid_ = 0;
+        return;
+    }
+
+    eid_ = dev->eid(); // or dev->getEid()
 }
 
 void OperationSession::updateState(OpState newState)
@@ -176,7 +181,8 @@ inline BejDictionaries OperationSession::getDictionaries()
 {
     try
     {
-        if (device_ == nullptr || device_->getDictionaryManager() == nullptr)
+        auto dev = device_.lock();
+        if (!dev || dev->getDictionaryManager() == nullptr)
         {
             lg2::error(
                 "RDE: DictionaryManager unavailable for resourceId={RID}",
@@ -185,12 +191,12 @@ inline BejDictionaries OperationSession::getDictionaries()
         }
 
         std::span<const uint8_t> schemaDict =
-            device_->getDictionaryManager()
+            dev->getDictionaryManager()
                 ->get(currentResourceId_, bejMajorSchemaClass)
                 ->getDictionaryBytes();
 
         std::span<const uint8_t> annotDict =
-            device_->getDictionaryManager()
+            dev->getDictionaryManager()
                 ->getAnnotationDictionary()
                 ->getDictionaryBytes();
 
@@ -391,11 +397,16 @@ void createCache(std::string targetURI, OperationType operationType,
 
 void OperationSession::doOperationInit()
 {
-    auto instanceId = device_->getInstanceIdDb().next(eid_);
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        return; // Device already destroyed
+    }
+    auto instanceId = dev->getInstanceIdDb().next(eid_);
 
     int rc = 0;
     const std::string& resourceIdStr =
-        device_->getRegistry()->getResourceIdFromUri(oipInfo.targetURI);
+        dev->getRegistry()->getResourceIdFromUri(oipInfo.targetURI);
     currentResourceId_ = static_cast<uint32_t>(std::stoul(resourceIdStr));
     rde_op_id operationID = oipInfo.operationID;
     uint32_t sendDataTransferHandle;
@@ -432,7 +443,7 @@ void OperationSession::doOperationInit()
                     "EID", oipInfo.eid, "URI", oipInfo.targetURI, "PAYLOAD",
                     oipInfo.payload);
                 updateState(OpState::OperationFailed);
-                device_->getInstanceIdDb().free(eid_, instanceId);
+                dev->getInstanceIdDb().free(eid_, instanceId);
                 return;
             }
 
@@ -443,7 +454,7 @@ void OperationSession::doOperationInit()
                     "BEJ encode failed: produced empty payload. EID '{EID}', URI '{URI}'",
                     "EID", oipInfo.eid, "URI", oipInfo.targetURI);
                 updateState(OpState::OperationFailed);
-                device_->getInstanceIdDb().free(eid_, instanceId);
+                dev->getInstanceIdDb().free(eid_, instanceId);
                 return;
             }
         }
@@ -455,13 +466,13 @@ void OperationSession::doOperationInit()
                 "RDE: Empty request payload is not allowed for UPDATE. EID '{EID}', targetURI '{URI}'",
                 "EID", oipInfo.eid, "URI", oipInfo.targetURI);
             updateState(OpState::OperationFailed);
-            device_->getInstanceIdDb().free(eid_, instanceId);
+            dev->getInstanceIdDb().free(eid_, instanceId);
             return;
         }
 #endif
 
         const auto& chunkMeta =
-            device_->getMetadataField("mcMaxTransferChunkSizeBytes");
+            dev->getMetadataField("mcMaxTransferChunkSizeBytes");
         const auto* maxChunkSizePtr = std::get_if<uint32_t>(&chunkMeta);
         if (!maxChunkSizePtr)
         {
@@ -469,7 +480,7 @@ void OperationSession::doOperationInit()
                 "RDE:Invalid metadata: 'mcMaxTransferChunkSizeBytes' is missing or malformed. EID={EID}",
                 "EID", eid_);
             updateState(OpState::OperationFailed);
-            device_->getInstanceIdDb().free(eid_, instanceId);
+            dev->getInstanceIdDb().free(eid_, instanceId);
             return;
         }
 
@@ -512,11 +523,11 @@ void OperationSession::doOperationInit()
               eid_, "RC", rc);
 
         updateState(OpState::OperationFailed);
-        device_->getInstanceIdDb().free(eid_, instanceId);
+        dev->getInstanceIdDb().free(eid_, instanceId);
         return;
     }
 
-    rc = device_->getHandler()->registerRequest(
+    rc = dev->getHandler()->registerRequest(
         eid_, instanceId, PLDM_RDE, PLDM_RDE_OPERATION_INIT, std::move(request),
         [this](uint8_t /*eid*/, const pldm_msg* respMsg, size_t rxLen) {
             this->handleOperationInitResp(respMsg, rxLen);
@@ -531,7 +542,7 @@ void OperationSession::doOperationInit()
                     oipInfo.deviceUUID);
 #endif
         updateState(OpState::OperationFailed);
-        device_->getInstanceIdDb().free(eid_, instanceId);
+        dev->getInstanceIdDb().free(eid_, instanceId);
         throw std::runtime_error("Failed to send request OperationInit");
     }
 
@@ -541,10 +552,10 @@ void OperationSession::doOperationInit()
 void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
                                                size_t rxLen)
 {
-    if (!device_)
+    auto dev = device_.lock();
+    if (!dev)
     {
-        error("RDE:handleOperationInitResp received null device pointer!");
-        return;
+        return; // Device already destroyed
     }
 
     if (currentState_ == OpState::TimedOut ||
@@ -556,7 +567,7 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
     }
 
     info("handleOperationInitResp Start: EID={EID} rxLen={RXLEN}", "EID",
-         device_->eid(), "RXLEN", rxLen);
+         dev->eid(), "RXLEN", rxLen);
 
     if (respMsg == nullptr)
     {
@@ -578,7 +589,7 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
     }
 
     const std::string& resourceIdStr =
-        device_->getRegistry()->getResourceIdFromUri(oipInfo.targetURI);
+        dev->getRegistry()->getResourceIdFromUri(oipInfo.targetURI);
     currentResourceId_ = static_cast<uint32_t>(std::stoul(resourceIdStr));
     uint8_t cc = 0;
     uint8_t operationStatus;
@@ -618,7 +629,7 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
                     oipInfo.deviceUUID);
 #endif
         updateState(OpState::OperationFailed);
-        emitTaskUpdatedSignal(device_->getBus(), oipInfo.opTaskPath, "{}",
+        emitTaskUpdatedSignal(dev->getBus(), oipInfo.opTaskPath, "{}",
                               static_cast<uint16_t>(OpState::OperationFailed));
         return;
     }
@@ -635,7 +646,7 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
             std::string decoded = getJsonStrPayload();
             info("Response{STR}", "STR", decoded.c_str());
             emitTaskUpdatedSignal(
-                device_->getBus(), oipInfo.opTaskPath, decoded.c_str(),
+                dev->getBus(), oipInfo.opTaskPath, decoded.c_str(),
                 static_cast<uint16_t>(OpState::OperationCompleted));
             doOperationComplete();
         }
@@ -644,20 +655,25 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
             try
             {
                 receiver_ = std::make_unique<pldm::rde::MultipartReceiver>(
-                    device_, eid_, resultTransferHandle);
+                    std::weak_ptr<Device>(device_), eid_, resultTransferHandle);
 
                 receiver_->start(
                     [this](std::span<const uint8_t> payload,
                            const pldm::rde::MultipartRcvMeta& meta) {
                         addChunk(currentResourceId_, payload, meta.hasChecksum,
                                  meta.isFinalChunk);
+                        auto dev = device_.lock();
+                        if (!dev)
+                        {
+                            return; // use co_return if coroutine
+                        }
                         if (isComplete())
                         {
                             info("MultipartReceive sequence completed");
                             std::string decoded = getJsonStrPayload();
                             info("Response{STR}", "STR", decoded.c_str());
                             emitTaskUpdatedSignal(
-                                device_->getBus(), oipInfo.opTaskPath,
+                                dev->getBus(), oipInfo.opTaskPath,
                                 decoded.c_str(),
                                 static_cast<uint16_t>(
                                     OpState::OperationCompleted));
@@ -701,10 +717,15 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
                     "HANDLE", resultTransferHandle, "RID", currentResourceId_);
 
                 sender_ = std::make_unique<pldm::rde::MultipartSender>(
-                    device_, eid_, payloadBuffer);
+                    std::weak_ptr<Device>(device_), eid_, payloadBuffer);
 
                 sender_->start(
                     [this](const pldm::rde::MultipartSndMeta& meta) {
+                        auto dev = device_.lock();
+                        if (!dev)
+                        {
+                            return; // use co_return if coroutine
+                        }
                         if ((meta.isOpComplete))
                         {
                             info("Multipartsend completed");
@@ -714,7 +735,7 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
                                                     oipInfo.deviceUUID);
 #endif
                             emitTaskUpdatedSignal(
-                                device_->getBus(), oipInfo.opTaskPath, "",
+                                dev->getBus(), oipInfo.opTaskPath, "",
                                 static_cast<uint16_t>(
                                     OpState::OperationCompleted));
                             doOperationComplete();
@@ -749,7 +770,7 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
             emitCacheConsumedSignal(oipInfo.opTaskPath, oipInfo.deviceUUID);
 #endif
         emitTaskUpdatedSignal(
-            device_->getBus(), oipInfo.opTaskPath, "",
+            dev->getBus(), oipInfo.opTaskPath, "",
             static_cast<uint16_t>(OpState::OperationCompleted));
         doOperationComplete();
     }
@@ -759,9 +780,15 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
 
 void OperationSession::doOperationComplete()
 {
-    auto instanceId = device_->getInstanceIdDb().next(eid_);
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        return; // Device already destroyed
+    }
 
-    ResourceRegistry* resourceRegistry = device_->getRegistry();
+    auto instanceId = dev->getInstanceIdDb().next(eid_);
+
+    ResourceRegistry* resourceRegistry = dev->getRegistry();
     const std::string& resourceIdStr =
         resourceRegistry->getResourceIdFromUri(oipInfo.targetURI);
     currentResourceId_ = static_cast<uint32_t>(std::stoul(resourceIdStr));
@@ -780,11 +807,11 @@ void OperationSession::doOperationComplete()
               eid_, "RC", rc);
 
         updateState(OpState::OperationFailed);
-        device_->getInstanceIdDb().free(eid_, instanceId);
+        dev->getInstanceIdDb().free(eid_, instanceId);
         return;
     }
 
-    rc = device_->getHandler()->registerRequest(
+    rc = dev->getHandler()->registerRequest(
         eid_, instanceId, PLDM_RDE, PLDM_RDE_OPERATION_COMPLETE,
         std::move(request),
         [this](uint8_t /*eid*/, const pldm_msg* respMsg, size_t rxLen) {
@@ -797,7 +824,7 @@ void OperationSession::doOperationComplete()
             "Failed to send request OperationCompelete EID '{EID}', RC '{RC}'",
             "EID", eid_, "RC", rc);
 
-        device_->getInstanceIdDb().free(eid_, instanceId);
+        dev->getInstanceIdDb().free(eid_, instanceId);
 
         throw std::runtime_error("Failed to send request OperationComplete");
     }

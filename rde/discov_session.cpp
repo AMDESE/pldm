@@ -18,24 +18,20 @@ PHOSPHOR_LOG2_USING;
 
 namespace pldm::rde
 {
-DiscoverySession::DiscoverySession(std::shared_ptr<Device> device) :
-    device_(std::move(device)), eid_(device_->eid()), tid_(device_->getTid()),
-    currentState_(OpState::Idle)
+DiscoverySession::DiscoverySession(std::weak_ptr<Device> device) :
+    device_(std::move(device)), currentState_(OpState::Idle)
 {
-    info(
-        "RDE: DiscoverySession created for EID={EID},TID={TID}, use_count={COUNT}",
-        "EID", static_cast<int>(eid_), "TID", tid_, "COUNT",
-        device_.use_count());
-
-    // Optional: log pointers if debugging deep ownership
-    if (!device_)
+    auto dev = device_.lock();
+    if (!dev)
     {
+        eid_ = 0;
+        tid_ = 0;
         error("RDE:DiscoverySession received null device pointer!");
+        return;
     }
 
-    // Optional: print address for deep tracking
-    debug("RDE:DiscoverySession bound to Device instance at address={ADDR}",
-          "ADDR", static_cast<const void*>(device_.get()));
+    eid_ = dev->eid();
+    tid_ = dev->getTid();
 }
 
 void DiscoverySession::updateState(OpState newState)
@@ -54,8 +50,13 @@ void DiscoverySession::sendRDECommand(
 {
     info("RDE: sendRDECommand Start: EID={EID} InstanceID={IID}, Command={CMD}",
          "EID", eid, "IID", instanceId, "CMD", command);
-
-    int rc = device_->getHandler()->registerRequest(
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        error("OperationSession: device expired");
+        return;
+    }
+    int rc = dev->getHandler()->registerRequest(
         eid, instanceId, PLDM_RDE, command, std::move(request),
         [callback,
          device = device_](uint8_t /*eid*/, const pldm_msg* respMsg,
@@ -64,7 +65,7 @@ void DiscoverySession::sendRDECommand(
     {
         error("RDE: Failed to send command {CMD} to EID={EID}, RC={RC}", "CMD",
               command, "EID", eid, "RC", rc);
-        device_->getInstanceIdDb().free(eid, instanceId);
+        dev->getInstanceIdDb().free(eid, instanceId);
         return;
     }
 
@@ -74,15 +75,20 @@ void DiscoverySession::sendRDECommand(
 void DiscoverySession::doNegotiateRedfish()
 {
     info("RDE: NegotiateRedfishParameters  Enter");
-
-    auto instanceId = device_->getInstanceIdDb().next(eid_);
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        error("OperationSession: device expired");
+        return;
+    }
+    auto instanceId = dev->getInstanceIdDb().next(eid_);
 
     Request request(
         sizeof(pldm_msg_hdr) + PLDM_RDE_NEGOTIATE_REDFISH_PARAMETERS_REQ_BYTES);
     auto requestMsg = new (request.data()) pldm_msg;
 
     // Variant-safe: Extract mcFeatureSupport
-    const auto& featureMeta = device_->getMetadataField("mcFeatureSupport");
+    const auto& featureMeta = dev->getMetadataField("mcFeatureSupport");
     const auto* featureSupport = std::get_if<FeatureSupport>(&featureMeta);
     if (!featureSupport)
     {
@@ -96,8 +102,7 @@ void DiscoverySession::doNegotiateRedfish()
     mcFeatureBits.value = featureSupport->value;
 
     // Variant-safe: Extract mcConcurrencySupport
-    const auto& concurrencyMeta =
-        device_->getMetadataField("mcConcurrencySupport");
+    const auto& concurrencyMeta = dev->getMetadataField("mcConcurrencySupport");
     const auto* concurrencySupport = std::get_if<uint8_t>(&concurrencyMeta);
     if (!concurrencySupport)
     {
@@ -121,7 +126,7 @@ void DiscoverySession::doNegotiateRedfish()
             "RDE: encode NegotiateRedfishParameters request EID '{EID}', RC '{RC}'",
             "EID", eid_, "RC", rc);
         updateState(OpState::OperationFailed);
-        device_->getInstanceIdDb().free(eid_, instanceId);
+        dev->getInstanceIdDb().free(eid_, instanceId);
         return;
     }
 
@@ -137,7 +142,12 @@ void DiscoverySession::handleNegotiateRedfishResp(const pldm_msg* respMsg,
 {
     info("RDE: handleNegotiateRedfishResp Start: EID={EID} rxLen={RXLEN}",
          "EID", eid_, "RXLEN", rxLen);
-
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        error("OperationSession: device expired");
+        return;
+    }
     if (currentState_ == OpState::TimedOut ||
         currentState_ == OpState::Cancelled)
     {
@@ -151,7 +161,7 @@ void DiscoverySession::handleNegotiateRedfishResp(const pldm_msg* respMsg,
         error("RDE: Null PLDM response received from endpoint ID {EID}", "EID",
               eid_);
         updateState(OpState::OperationFailed);
-        device_->negotiationStatus(device_->NegotiationStatus::Failed, false);
+        dev->negotiationStatus(dev->NegotiationStatus::Failed, false);
         return;
     }
 
@@ -160,7 +170,7 @@ void DiscoverySession::handleNegotiateRedfishResp(const pldm_msg* respMsg,
         error("RDE:rxLen is 0; applying fallback length. EID={EID}", "EID",
               eid_);
         updateState(OpState::OperationFailed);
-        device_->negotiationStatus(device_->NegotiationStatus::Failed, false);
+        dev->negotiationStatus(dev->NegotiationStatus::Failed, false);
         return;
     }
 
@@ -181,7 +191,7 @@ void DiscoverySession::handleNegotiateRedfishResp(const pldm_msg* respMsg,
             "RDE: Failed to decode NegotiateRedfishParameters response rc:{RC} cc:{CC}",
             "RC", rc, "CC", cc);
         updateState(OpState::OperationFailed);
-        device_->negotiationStatus(device_->NegotiationStatus::Failed, false);
+        dev->negotiationStatus(dev->NegotiationStatus::Failed, false);
         return;
     }
 
@@ -195,12 +205,12 @@ void DiscoverySession::handleNegotiateRedfishResp(const pldm_msg* respMsg,
         "CONCURRENCY", devConcurrency, "FEATURE", features.value, "CAPS",
         caps.value);
 
-    if (device_)
+    if (dev)
     {
-        device_->setMetadataField("deviceConcurrencySupport", devConcurrency);
-        device_->setMetadataField("devCapabilities", caps);
-        device_->setMetadataField("devFeatureSupport", features);
-        device_->setMetadataField("devConfigSignature", configSig);
+        dev->setMetadataField("deviceConcurrencySupport", devConcurrency);
+        dev->setMetadataField("devCapabilities", caps);
+        dev->setMetadataField("devFeatureSupport", features);
+        dev->setMetadataField("devConfigSignature", configSig);
     }
 
     info("RDE: NegotiateRedfishParameters Command completed");
@@ -212,15 +222,20 @@ void DiscoverySession::handleNegotiateRedfishResp(const pldm_msg* respMsg,
 void DiscoverySession::doNegotiateMediumParams()
 {
     info("RDE: NegotiateMediumParameters Enter EID={EID}", "EID", eid_);
-
-    auto instanceId = device_->getInstanceIdDb().next(eid_);
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        error("OperationSession: device expired");
+        return;
+    }
+    auto instanceId = dev->getInstanceIdDb().next(eid_);
 
     Request request(
         sizeof(pldm_msg_hdr) + PLDM_RDE_NEGOTIATE_MEDIUM_PARAMETERS_REQ_BYTES);
     auto requestMsg = new (request.data()) pldm_msg;
 
     const auto& chunkMeta =
-        device_->getMetadataField("mcMaxTransferChunkSizeBytes");
+        dev->getMetadataField("mcMaxTransferChunkSizeBytes");
     const auto* chunkSizePtr = std::get_if<uint32_t>(&chunkMeta);
     if (!chunkSizePtr)
     {
@@ -243,7 +258,7 @@ void DiscoverySession::doNegotiateMediumParams()
         error(
             "RDE: Encoding NegotiateMediumParameters failed: EID={EID}, RC={RC}",
             "EID", eid_, "RC", rc);
-        device_->getInstanceIdDb().free(eid_, instanceId);
+        dev->getInstanceIdDb().free(eid_, instanceId);
         return;
     }
 
@@ -259,7 +274,12 @@ void DiscoverySession::handleNegotiateMediumResp(const pldm_msg* respMsg,
 {
     info("RDE: handleNegotiateMediumResp Start: EID={EID} rxLen={RXLEN}", "EID",
          eid_, "RXLEN", rxLen);
-
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        error("OperationSession: device expired");
+        return;
+    }
     if (currentState_ == OpState::TimedOut ||
         currentState_ == OpState::Cancelled)
     {
@@ -272,7 +292,7 @@ void DiscoverySession::handleNegotiateMediumResp(const pldm_msg* respMsg,
     {
         error("RDE: Null PLDM response received from Endpoint ID {EID}", "EID",
               eid_);
-        device_->negotiationStatus(device_->NegotiationStatus::Failed, false);
+        dev->negotiationStatus(dev->NegotiationStatus::Failed, false);
         updateState(OpState::OperationFailed);
         return;
     }
@@ -280,7 +300,7 @@ void DiscoverySession::handleNegotiateMediumResp(const pldm_msg* respMsg,
     if (rxLen == 0)
     {
         error("RDE: rxLen is 0; Bad response Packet. EID={EID}", "EID", eid_);
-        device_->negotiationStatus(device_->NegotiationStatus::Failed, false);
+        dev->negotiationStatus(dev->NegotiationStatus::Failed, false);
         updateState(OpState::OperationFailed);
         return;
     }
@@ -296,7 +316,7 @@ void DiscoverySession::handleNegotiateMediumResp(const pldm_msg* respMsg,
         error(
             "RDE: Failed to decode NegotiateMediumParameters response rc:{RC} cc:{CC}",
             "RC", rc, "CC", cc);
-        device_->negotiationStatus(device_->NegotiationStatus::Failed, false);
+        dev->negotiationStatus(dev->NegotiationStatus::Failed, false);
         updateState(OpState::OperationFailed);
         return;
     }
@@ -305,8 +325,8 @@ void DiscoverySession::handleNegotiateMediumResp(const pldm_msg* respMsg,
         "RDE: NegotiateMediumParameters response: EID={EID}, DeviceMaxTransfer={SIZE}",
         "EID", eid_, "SIZE", devMaxTransferChunkSizeBytes);
 
-    device_->setMetadataField("devMaxTransferChunkSizeBytes",
-                              devMaxTransferChunkSizeBytes);
+    dev->setMetadataField("devMaxTransferChunkSizeBytes",
+                          devMaxTransferChunkSizeBytes);
 
     info("RDE: NegotiateMediumParameters Command completed");
 
@@ -316,6 +336,12 @@ void DiscoverySession::handleNegotiateMediumResp(const pldm_msg* respMsg,
 
 void DiscoverySession::getDictionaries()
 {
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        error("OperationSession: device expired");
+        return;
+    }
     const std::string triggerFile = "/tmp/.enable_dict_bootstrap";
     if (std::filesystem::exists(triggerFile))
     {
@@ -324,7 +350,7 @@ void DiscoverySession::getDictionaries()
     }
 
     // Collect all applicable resource IDs from device's registry
-    const auto& resourceMap = device_->getRegistry()->getResourceMap();
+    const auto& resourceMap = dev->getRegistry()->getResourceMap();
 
     for (const auto& [rid, info] : resourceMap)
     {
@@ -339,20 +365,26 @@ void DiscoverySession::getDictionaries()
 
     // Schedule the first dictionary command using a deferred source
     dictionaryDefer_ = std::make_unique<sdeventplus::source::Defer>(
-        device_->getEvent(), [this](sdeventplus::source::EventBase&) {
+        dev->getEvent(), [this](sdeventplus::source::EventBase&) {
             this->runNextDictionaryCommand(resourceIndex_);
         });
 }
 
 void DiscoverySession::runNextDictionaryCommand(size_t index)
 {
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        error("OperationSession: device expired");
+        return;
+    }
     dictionaryDefer_.reset();
 
     if (index >= majorSchemaResources_.size())
     {
         info("RDE: All schema dictionary commands completed.");
         // Update negotiation status
-        device_->negotiationStatus(device_->NegotiationStatus::Success, false);
+        dev->negotiationStatus(dev->NegotiationStatus::Success, false);
         return;
     }
 
@@ -365,7 +397,7 @@ void DiscoverySession::runNextDictionaryCommand(size_t index)
 
     resourceIndex_ = index + 1;
 
-    auto instanceId = device_->getInstanceIdDb().next(eid_);
+    auto instanceId = dev->getInstanceIdDb().next(eid_);
 
     size_t payloadLength =
         sizeof(pldm_msg_hdr) + PLDM_RDE_SCHEMA_DICTIONARY_REQ_BYTES;
@@ -377,10 +409,10 @@ void DiscoverySession::runNextDictionaryCommand(size_t index)
     if (rc != PLDM_SUCCESS)
     {
         error("RDE: Encoding GetSchemaDictionary failed: RC={RC}", "RC", rc);
-        device_->getInstanceIdDb().free(eid_, instanceId);
+        dev->getInstanceIdDb().free(eid_, instanceId);
 
         dictionaryDefer_ = std::make_unique<sdeventplus::source::Defer>(
-            device_->getEvent(), [this](sdeventplus::source::EventBase&) {
+            dev->getEvent(), [this](sdeventplus::source::EventBase&) {
                 this->runNextDictionaryCommand(resourceIndex_);
             });
 
@@ -400,13 +432,19 @@ void DiscoverySession::runNextDictionaryCommand(size_t index)
 void DiscoverySession::handleGetSchemaDictionaryResp(const pldm_msg* respMsg,
                                                      size_t rxLen)
 {
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        error("OperationSession: device expired");
+        return;
+    }
     if (!respMsg || rxLen == 0)
     {
         error("RDE: Invalid response for resourceId={RID}", "RID",
               currentResourceId_);
 
         dictionaryDefer_ = std::make_unique<sdeventplus::source::Defer>(
-            device_->getEvent(), [this](sdeventplus::source::EventBase&) {
+            dev->getEvent(), [this](sdeventplus::source::EventBase&) {
                 this->runNextDictionaryCommand(resourceIndex_);
             });
         return;
@@ -426,7 +464,7 @@ void DiscoverySession::handleGetSchemaDictionaryResp(const pldm_msg* respMsg,
             "RID", currentResourceId_, "RC", rc, "CC", cc);
 
         dictionaryDefer_ = std::make_unique<sdeventplus::source::Defer>(
-            device_->getEvent(), [this](sdeventplus::source::EventBase&) {
+            dev->getEvent(), [this](sdeventplus::source::EventBase&) {
                 this->runNextDictionaryCommand(resourceIndex_);
             });
         return;
@@ -443,7 +481,10 @@ void DiscoverySession::handleGetSchemaDictionaryResp(const pldm_msg* respMsg,
         receiver_->start(
             [this](std::span<const uint8_t> payload,
                    const pldm::rde::MultipartRcvMeta& meta) {
-                auto* dictMgr = device_->getDictionaryManager();
+                auto dev = device_.lock();
+                if (!dev)
+                    return;
+                auto* dictMgr = dev->getDictionaryManager();
                 if (!dictMgr)
                 {
                     error(
@@ -469,7 +510,7 @@ void DiscoverySession::handleGetSchemaDictionaryResp(const pldm_msg* respMsg,
                 {
                     dictionaryDefer_ =
                         std::make_unique<sdeventplus::source::Defer>(
-                            device_->getEvent(),
+                            dev->getEvent(),
                             [this](sdeventplus::source::EventBase&) {
                                 this->runNextDictionaryCommand(resourceIndex_);
                                 receiver_.reset();

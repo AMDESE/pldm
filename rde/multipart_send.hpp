@@ -52,7 +52,7 @@ class MultipartSender
      * @param eid Device endpoint ID.
      * @param dataPayload The request payload data.
      */
-    MultipartSender(std::shared_ptr<Device> device, uint8_t eid,
+    MultipartSender(std::weak_ptr<Device> device, uint8_t eid,
                     std::vector<uint8_t> dataPayload);
 
     /**
@@ -119,7 +119,7 @@ class MultipartSender
                               const std::vector<uint8_t>& payload,
                               uint32_t checksum);
 
-    std::shared_ptr<Device> device_;   // Target device abstraction.
+    std::weak_ptr<Device> device_;     // Target device abstraction.
     uint8_t eid_;                      // Device endpoint ID.
     uint32_t transferHandle_ = 1;      // Current multipart transfer handle.
     rde_op_id operationID_;            // Current transfer operation phase.

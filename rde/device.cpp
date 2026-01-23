@@ -51,10 +51,10 @@ void Device::refreshDeviceInfo()
         dictionaryManager_ =
             std::make_unique<pldm::rde::DictionaryManager>(deviceUUID());
 
-        std::shared_ptr<Device> self;
+        std::weak_ptr<Device> self;
         try
         {
-            self = shared_from_this();
+            self = weak_from_this();
         }
         catch (const std::bad_weak_ptr& e)
         {
@@ -96,15 +96,10 @@ void Device::performRDEOperation(const OperationInfo& oipInfo)
 {
     info("Operation Session Started");
 
-    std::shared_ptr<Device> self;
+    std::weak_ptr<Device> self;
     try
     {
-        self = shared_from_this();
-        if (!self)
-        {
-            error("Device::shared_from_this() returned null shared_ptr");
-            return;
-        }
+        self = weak_from_this();
     }
     catch (const std::bad_weak_ptr& e)
     {
@@ -225,7 +220,29 @@ DeviceState Device::getState() const
 
 void Device::updateState(DeviceState newState)
 {
+    if (newState == DeviceState::NotReady ||
+        newState == DeviceState::Unreachable ||
+        newState == DeviceState::Disabled)
+    {
+        discovSession_.reset();
+        opSession_.reset();
+        resourceRegistry_.reset();
+        dictionaryManager_.reset();
+        this->negotiationStatus(NegotiationStatus::NotStarted);
+    }
+
     currentState_ = newState;
+}
+
+void Device::shutdown()
+{
+    shuttingDown_ = true;
+
+    if (opSession_)
+        opSession_.reset();
+
+    if (discovSession_)
+        discovSession_.reset();
 }
 
 SchemaResourcesType Device::buildSchemaResourcesPayload() const
