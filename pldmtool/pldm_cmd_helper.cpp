@@ -90,8 +90,7 @@ void fillCompletionCode(uint8_t completionCode, ordered_json& data,
 }
 
 int mctpSockSendRecv(const uint8_t mctpNetworkId, const uint8_t eid,
-                     const bool mctpPreAllocTag,
-                     const uint16_t pollInterval,
+                     const bool mctpPreAllocTag, const uint16_t pollInterval,
                      const std::vector<uint8_t>& requestMsg,
                      void** responseMessage, size_t* responseMessageSize)
 {
@@ -169,8 +168,8 @@ int mctpSockSendRecv(const uint8_t mctpNetworkId, const uint8_t eid,
     rc = poll(&pollfd, 1, pollInterval * 1000);
     if (rc < 0)
     {
-        std::cerr << "poll(AF_MCTP, " << pollInterval << ") failed. errnostr = "
-                  << strerror(errno) << "\n";
+        std::cerr << "poll(AF_MCTP, " << pollInterval
+                  << ") failed. errnostr = " << strerror(errno) << "\n";
         close(sd);
         return rc;
     }
@@ -279,10 +278,11 @@ int CommandInterface::pldmSendRecv(std::vector<uint8_t>& requestMsg,
 
     if (CommandInterface::pldmType == "amdMctpSfs")
     {
-       std::cout << "pldmtool: ";
-       size_t printLen = std::min(requestMsg.size(), static_cast<size_t>(32));
-       std::vector<uint8_t> partialMsg(requestMsg.begin(), requestMsg.begin() + printLen);
-       printBuffer(Tx, partialMsg);
+        std::cout << "pldmtool: ";
+        size_t printLen = std::min(requestMsg.size(), static_cast<size_t>(32));
+        std::vector<uint8_t> partialMsg(requestMsg.begin(),
+                                        requestMsg.begin() + printLen);
+        printBuffer(Tx, partialMsg);
     }
 
     auto tid = mctp_eid;
@@ -295,7 +295,8 @@ int CommandInterface::pldmSendRecv(std::vector<uint8_t>& requestMsg,
         void* responseMessage = nullptr;
         size_t responseMessageSize{};
 
-        if (CommandInterface::pldmType != "mctpRaw" && CommandInterface::pldmType != "amdMctpSfs")
+        if (CommandInterface::pldmType != "mctpRaw" &&
+            CommandInterface::pldmType != "amdMctpSfs")
         {
             rc = pldmTransport.sendRecvMsg(tid, requestMsg.data(),
                                            requestMsg.size(), responseMessage,
@@ -336,10 +337,12 @@ int CommandInterface::pldmSendRecv(std::vector<uint8_t>& requestMsg,
 
         if (CommandInterface::pldmType == "amdMctpSfs")
         {
-           std::cout << "pldmtool: ";
-           size_t printLen = std::min(responseMsg.size(), static_cast<size_t>(32));
-           std::vector<uint8_t> partialMsg(responseMsg.begin(), responseMsg.begin() + printLen);
-           printBuffer(Rx, partialMsg);
+            std::cout << "pldmtool: ";
+            size_t printLen =
+                std::min(responseMsg.size(), static_cast<size_t>(32));
+            std::vector<uint8_t> partialMsg(responseMsg.begin(),
+                                            responseMsg.begin() + printLen);
+            printBuffer(Rx, partialMsg);
         }
     }
 

@@ -794,25 +794,28 @@ std::optional<std::pair<eid, UUID>> TerminusManager::getMctpInfoForTid(
 
 std::optional<uint8_t> TerminusManager::getBmcMctpEid()
 {
-	const std::string fileName = "/var/run/bmceid0";
+    const std::string fileName = "/var/run/bmceid0";
 
-	try {
-		std::ifstream toDevice;
+    try
+    {
+        std::ifstream toDevice;
 
-		toDevice.exceptions(std::ios::failbit | std::ios::badbit);
-		toDevice.open(fileName);
+        toDevice.exceptions(std::ios::failbit | std::ios::badbit);
+        toDevice.open(fileName);
 
-		uint8_t bmcMctpEid = 0;
-		toDevice.read(reinterpret_cast<char*>(&bmcMctpEid), sizeof(bmcMctpEid));
+        uint8_t bmcMctpEid = 0;
+        toDevice.read(reinterpret_cast<char*>(&bmcMctpEid), sizeof(bmcMctpEid));
 
-		return bmcMctpEid;
-	}
+        return bmcMctpEid;
+    }
 
-	catch (const std::ios_base::failure& iose) {
-		std::cerr << "In file I/O error: " << iose.what() << fileName << std::endl;
-	}
+    catch (const std::ios_base::failure& iose)
+    {
+        std::cerr << "In file I/O error: " << iose.what() << fileName
+                  << std::endl;
+    }
 
-	return std::nullopt;
+    return std::nullopt;
 }
 } // namespace platform_mc
 } // namespace pldm
