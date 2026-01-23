@@ -4,8 +4,8 @@
 #include "pldm_fru_cmd.hpp"
 #include "pldm_fw_update_cmd.hpp"
 #include "pldm_platform_cmd.hpp"
-#include "pldmtool/oem/ibm/pldm_oem_ibm.hpp"
 #include "pldmtool/oem/amd/pldm_oem_amd.hpp"
+#include "pldmtool/oem/ibm/pldm_oem_ibm.hpp"
 
 #include <CLI/CLI.hpp>
 

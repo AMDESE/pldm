@@ -149,12 +149,12 @@ class TerminusManager
      */
     mctp_eid_t getLocalEid() const
     {
-	auto hostEid = getBmcMctpEid();
+        auto hostEid = getBmcMctpEid();
 
-	if (hostEid.has_value())
-		return *hostEid;
+        if (hostEid.has_value())
+            return *hostEid;
 
-	return localEid;
+        return localEid;
     }
 
     /** @brief Helper function to invoke registered handlers for
