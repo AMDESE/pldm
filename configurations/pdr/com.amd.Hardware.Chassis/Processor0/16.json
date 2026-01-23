@@ -7,9 +7,7 @@
             "container_id": 0,
             "shared_name_count": 0,
             "name_string_count": 1,
-            "names": [
-                ["en", "Processor0"]
-            ]
+            "names": [["en", "Processor0"]]
         }
     ]
 }
