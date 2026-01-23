@@ -48,7 +48,7 @@ class OperationSession
      * @param[in] oipInfo Metadata struct containing operation type, URI, and
      * format.
      */
-    OperationSession(std::shared_ptr<Device> device,
+    OperationSession(std::weak_ptr<Device> device,
                      struct OperationInfo oipInfo);
 
     OperationSession() = delete;
@@ -177,7 +177,7 @@ class OperationSession
                   bool hasChecksum, bool isFinalChunk);
 
   private:
-    std::shared_ptr<Device> device_;
+    std::weak_ptr<Device> device_;
     pldm::eid eid_;
     uint32_t currentResourceId_ = 0;
     OpState currentState_ = OpState::Idle;

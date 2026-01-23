@@ -53,7 +53,48 @@ Manager::Manager(sdbusplus::bus::bus& bus, sdeventplus::Event& event,
                 this->createDeviceDbusObject(signalEid, devUUID, signalTid,
                                              pdrPayloads);
             }
+            else
+            {
+                removeDeviceByEid(signalEid);
+                this->createDeviceDbusObject(signalEid, devUUID, signalTid,
+                                             pdrPayloads);
+            }
         });
+}
+
+void Manager::removeDeviceByEid(eid devEID)
+{
+    auto it = eidMap_.find(devEID);
+    if (it == eidMap_.end())
+    {
+        info("removeDeviceByEid: EID {EID} not found", "EID",
+             static_cast<int>(devEID));
+        return;
+    }
+
+    std::shared_ptr<Device> dev = it->second.devicePtr;
+
+    info("removeDeviceByEid: removing device EID {EID}", "EID",
+         static_cast<int>(devEID));
+
+    if (dev)
+    {
+        try
+        {
+            dev->shutdown();
+        }
+        catch (const std::exception& e)
+        {
+            error("removeDeviceByEid: shutdown exception EID {EID}: {ERR}",
+                  "EID", static_cast<int>(devEID), "ERR", e.what());
+        }
+    }
+
+    eidMap_.erase(it);
+    dev.reset();
+
+    info("removeDeviceByEid: removed device EID {EID}", "EID",
+         static_cast<int>(devEID));
 }
 
 void Manager::createDeviceDbusObject(
@@ -137,7 +178,7 @@ void Manager::createDeviceDbusObject(
                                  taskPathStr};
 
             opSession_ = std::make_unique<OperationSession>(
-                eidMap_[devEid].devicePtr, opInfo);
+                std::weak_ptr<Device>(eidMap_[devEid].devicePtr), opInfo);
             if (!opSession_)
             {
                 error("RDEReplayComplete: Failed to send zero length request");

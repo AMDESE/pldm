@@ -86,7 +86,8 @@ struct DeviceContext
  */
 class Manager :
     public sdbusplus::server::object::object<
-        sdbusplus::xyz::openbmc_project::RDE::server::Manager>
+        sdbusplus::xyz::openbmc_project::RDE::server::
+            Manager>
 {
   public:
     Manager(const Manager&) = delete;
@@ -257,6 +258,22 @@ class Manager :
     {
         return taskMap_;
     }
+
+    /**
+     * @brief Remove a device context identified by its PLDM EID.
+     *
+     * This method looks up the device associated with the given EID in the
+     * internal EID map and performs a controlled teardown of its context.
+     * If a valid device object exists, its shutdown routine is invoked to
+     * stop any ongoing operations and release associated resources.
+     *
+     * After shutdown, the device smart pointer is reset and the corresponding
+     * entry is removed from the internal EID tracking map. If the EID is not
+     * found, the call is a no-op and a log message is emitted.
+     *
+     * @param devEID[in] PLDM Endpoint ID (EID) of the device to be removed.
+     */
+    void removeDeviceByEid(eid devEID);
 
 #ifdef OEM_AMD
     pldm::eid getEidFromUuid(const UUID& uuid) const
