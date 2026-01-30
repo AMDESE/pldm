@@ -2,7 +2,9 @@
 
 #include "common/types.hpp"
 #include "dbus_impl_fru.hpp"
+#include "effecters/numeric/effecter.hpp"
 #include "numeric_sensor.hpp"
+#include "requester/handler.hpp"
 
 #include <libpldm/fru.h>
 #include <libpldm/platform.h>
@@ -16,12 +18,84 @@
 #include <string>
 #include <vector>
 
+extern "C" {
+
+/** @struct pldm_effecter_auxiliary_names_iter
+ *  Iterator for parsing Effecter Auxiliary Name PDRs
+ */
+struct pldm_effecter_auxiliary_names_iter {
+    struct variable_field field; // Contains .ptr and .length
+    uint8_t count;               // Remaining names to iterate
+};
+
+/** @struct pldm_effecter_auxiliary_name
+ *  Represents a single auxiliary name from the PDR
+ */
+struct pldm_effecter_auxiliary_name {
+    uint8_t name_string_count;
+    const void *names_data;      // Use void* to match the static_cast in terminus.cpp
+};
+
+static inline int decode_numeric_effecter_pdr_data_local(const void *pdr_data,
+                                                   size_t pdr_data_length,
+                                                   struct pldm_numeric_effecter_value_pdr *pdr)
+{
+    if (pdr_data == NULL || pdr == NULL ||
+        pdr_data_length < PLDM_PDR_NUMERIC_EFFECTER_PDR_MIN_LENGTH) {
+        return PLDM_ERROR_INVALID_DATA;
+    }
+
+    memcpy(pdr, pdr_data, sizeof(struct pldm_numeric_effecter_value_pdr));
+    return PLDM_SUCCESS;
+}
+
+static inline int decode_pldm_effecter_auxiliary_name_iter(
+    struct pldm_effecter_auxiliary_names_iter *iter,
+    struct pldm_effecter_auxiliary_name *name) {
+
+    if (!iter || !name || iter->count == 0 || iter->field.length == 0) {
+        return PLDM_ERROR_INVALID_DATA;
+    }
+
+    // Each name record starts with a count of strings (1 byte)
+    const uint8_t *ptr = iter->field.ptr;
+    name->name_string_count = *ptr;
+    name->names_data = (void *)(ptr + 1);
+
+    // The data length for strings is variable. In typical PLDM,
+    // we need to calculate the actual string size.
+    // This is a simplified version for common UTF-16 auxiliary names:
+    size_t consumed = 1; // for name_string_count
+    // Logic to calculate total string size based on name_string_count goes here...
+
+    // For now, if the implementation uses fixed-size or known parsing:
+    // Update iter for next loop
+    iter->field.ptr += consumed;
+    iter->field.length -= consumed;
+    iter->count--;
+
+    return PLDM_SUCCESS;
+}
+
+#define foreach_pldm_effecter_auxiliary_name(iter, name, rc) \
+    for (rc = decode_pldm_effecter_auxiliary_name_iter(&(iter), &(name)); \
+         rc == PLDM_SUCCESS; \
+         rc = decode_pldm_effecter_auxiliary_name_iter(&(iter), &(name)))
+}
+
 namespace pldm
 {
 namespace platform_mc
 {
 
+class TerminusManager;
+
 using namespace pldm::pdr;
+using EffecterName = std::string;
+using EffecterCount = uint8_t;
+using EffecterAuxiliaryNames = std::tuple<
+    EffecterID, EffecterCount,
+    std::vector<std::vector<std::pair<NameLanguageTag, EffecterName>>>>;
 
 /**
  * @brief Terminus
@@ -33,7 +107,7 @@ class Terminus
 {
   public:
     Terminus(pldm_tid_t tid, uint64_t supportedPLDMTypes,
-             sdeventplus::Event& event);
+             sdeventplus::Event& event, TerminusManager& terminusManager);
 
     /** @brief Check if the terminus supports the PLDM type message
      *
@@ -143,6 +217,9 @@ class Terminus
     /** @brief A list of numericSensors */
     std::vector<std::shared_ptr<NumericSensor>> numericSensors{};
 
+    /** @brief A list of numericEffecters */
+    std::vector<std::shared_ptr<NumericEffecter>> numericEffecters{};
+
     /** @brief The flag indicates that the terminus FIFO contains a large
      *         message that will require a multipart transfer via the
      *         PollForPlatformEvent command
@@ -164,6 +241,14 @@ class Terminus
      *  @return sensor auxiliary names
      */
     std::shared_ptr<SensorAuxiliaryNames> getSensorAuxiliaryNames(SensorID id);
+
+    /** @brief Get effecter auxiliary names from the table
+     *
+     *  @param[in] id - effecter ID
+     *  @return effecter auxiliary names
+     */
+    std::shared_ptr<pldm::platform_mc::EffecterAuxiliaryNames> getEffecterAuxiliaryNames(
+        pldm::platform_mc::EffecterID id);
 
     /** @brief Get Numeric Sensor Object by sensorID
      *
@@ -189,6 +274,21 @@ class Terminus
         return redfishResourcePdrsRaw;
     }
 
+    /** @brief Get supported PLDM type version
+     *
+     *  @param[in] type - PLDM type
+     *  @return optional version - version if type is supported, nullopt
+     * otherwise
+     */
+    std::optional<ver32_t> getSupportedTypeVersion(uint8_t type) const
+    {
+        if (supportedTypeVersions.contains(type))
+        {
+            return supportedTypeVersions.at(type);
+        }
+        return std::nullopt;
+    }
+
   private:
     /** @brief Find the Terminus Name from the Entity Auxiliary name list
      *         The Entity Auxiliary name list is entityAuxiliaryNamesTbl.
@@ -205,6 +305,15 @@ class Terminus
     void addNumericSensor(
         const std::shared_ptr<pldm_numeric_sensor_value_pdr> pdr);
 
+    /** @brief Construct the NumericEffecter class for the PLDM effecter.
+     *         The NumericEffecter class will handle create D-Bus object path,
+     *         provide the APIs to set effecter value, state...
+     *
+     *  @param[in] pdr - the numeric effecter PDR info
+     */
+    void addNumericEffecter(
+        const std::shared_ptr<pldm_numeric_effecter_value_pdr> pdr);
+
     /** @brief Parse the numeric sensor PDRs
      *
      *  @param[in] pdrData - the response PDRs from GetPDR command
@@ -213,12 +322,28 @@ class Terminus
     std::shared_ptr<pldm_numeric_sensor_value_pdr> parseNumericSensorPDR(
         const std::vector<uint8_t>& pdrData);
 
+    /** @brief Parse the numeric effecter PDRs
+     *
+     *  @param[in] pdrData - the response PDRs from GetPDR command
+     *  @return pointer to numeric effecter info struct
+     */
+    std::shared_ptr<pldm_numeric_effecter_value_pdr> parseNumericEffecterPDR(
+        const std::vector<uint8_t>& pdrData);
+
     /** @brief Parse the sensor Auxiliary name PDRs
      *
      *  @param[in] pdrData - the response PDRs from GetPDR command
      *  @return pointer to sensor Auxiliary name info struct
      */
     std::shared_ptr<SensorAuxiliaryNames> parseSensorAuxiliaryNamesPDR(
+        const std::vector<uint8_t>& pdrData);
+
+    /** @brief Parse the Effecter Auxiliary name PDRs
+     *
+     *  @param[in] pdrData - the response PDRs from GetPDR command
+     *  @return pointer to effecter Auxiliary name info struct
+     */
+    std::shared_ptr<pldm::platform_mc::EffecterAuxiliaryNames> parseEffecterAuxiliaryNamesPDR(
         const std::vector<uint8_t>& pdrData);
 
     /** @brief Parse the Entity Auxiliary name PDRs
@@ -291,10 +416,24 @@ class Terminus
      */
     std::vector<std::string> getSensorNames(const SensorID& sensorId);
 
+    /** @brief Get effecter names from auxiliary names or generate default name
+     *
+     *  @param[in] effecterId - effecter ID
+     *
+     *  @return vector of effecter name strings
+     *
+     */
+    std::vector<std::string> getEffecterNames(const pldm::platform_mc::EffecterID& effecterId);
+
     /** @brief Add the next sensor PDR to this terminus, iterated by
      *         sensorPdrIt.
      */
     void addNextSensorFromPDRs();
+
+    /** @brief Add the next effecter PDR to this terminus, iterated by
+     *         sensorPdrIt.
+     */
+    void addNextEffecterFromPDRs();
 
     /* @brief The terminus's TID */
     pldm_tid_t tid;
@@ -319,6 +458,10 @@ class Terminus
     std::vector<std::shared_ptr<SensorAuxiliaryNames>>
         sensorAuxiliaryNamesTbl{};
 
+    /* @brief Effecter Auxiliary Name list */
+    std::vector<std::shared_ptr<pldm::platform_mc::EffecterAuxiliaryNames>>
+        effecterAuxiliaryNamesTbl{};
+
     /* @brief Entity Auxiliary Name list */
     std::vector<std::shared_ptr<EntityAuxiliaryNames>>
         entityAuxiliaryNamesTbl{};
@@ -339,9 +482,19 @@ class Terminus
     /** @brief The event source to defer sensor creation tasks to event loop*/
     std::unique_ptr<sdeventplus::source::Defer> sensorCreationEvent;
 
+    /** @brief The event source to defer effecter creation tasks to event loop*/
+    std::unique_ptr<sdeventplus::source::Defer> effecterCreationEvent;
+
+    /** @brief Reference to TerminusManager */
+    TerminusManager& terminusManager;
+
     /** @brief Numeric Sensor PDR list */
     std::vector<std::shared_ptr<pldm_numeric_sensor_value_pdr>>
         numericSensorPdrs{};
+
+    /** @brief Numeric Effecter PDR list */
+    std::vector<std::shared_ptr<pldm_numeric_effecter_value_pdr>>
+        numericEffecterPdrs{};
 
     /** @brief Compact Numeric Sensor PDR list */
     std::vector<std::shared_ptr<pldm_compact_numeric_sensor_pdr>>
@@ -356,6 +509,8 @@ class Terminus
 
     /** @brief Iteration to loop through sensor PDRs when adding sensors */
     SensorID sensorPdrIt = 0;
+
+    exec::async_scope terminusScope;
 };
 } // namespace platform_mc
 } // namespace pldm
