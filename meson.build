@@ -81,6 +81,10 @@ if get_option('softoff').allowed()
         join_paths(package_datadir, 'softoff'),
     )
 endif
+
+if get_option('oem-amd').enabled()
+    add_project_arguments('-DOEM_AMD', language: 'cpp')
+endif
 if get_option('oem-ibm').allowed()
     conf_data.set_quoted(
         'FILE_TABLE_JSON',
@@ -249,6 +253,12 @@ deps = [
 ]
 
 oem_files = []
+
+if get_option('oem-amd').enabled()
+    subdir('oem/amd')
+    deps += oem_amd_dep
+endif
+
 if get_option('oem-ampere').allowed()
     subdir('oem/ampere')
 endif
@@ -276,10 +286,6 @@ fw_update_sources = files(
 
 if get_option('fw-update-pkg-inotify').allowed()
     fw_update_sources += files('fw-update/watch.cpp')
-endif
-
-if get_option('oem-amd').enabled()
-    oem_amd_pldm_sources += files('oem/amd/platform-mc/platform_manager.cpp')
 endif
 
 executable(
