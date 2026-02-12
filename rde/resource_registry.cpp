@@ -3,6 +3,7 @@
 #include <libpldm/platform.h>
 
 #include <nlohmann/json.hpp>
+#include <phosphor-logging/lg2.hpp>
 
 #include <fstream>
 #include <stdexcept>
