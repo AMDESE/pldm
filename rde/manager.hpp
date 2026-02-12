@@ -1,7 +1,7 @@
 #pragma once
 
 #ifdef OEM_AMD
-#include "operation_session.hpp"
+#include "cache_manager_dbus.hpp"
 #endif
 #include "operation_task.hpp"
 #include "requester/handler.hpp"
@@ -86,8 +86,7 @@ struct DeviceContext
  */
 class Manager :
     public sdbusplus::server::object::object<
-        sdbusplus::xyz::openbmc_project::RDE::server::
-            Manager>
+        sdbusplus::xyz::openbmc_project::RDE::server::Manager>
 {
   public:
     Manager(const Manager&) = delete;
@@ -193,6 +192,21 @@ class Manager :
         std::string targetURI, std::string deviceUUID, uint8_t eid,
         std::string payload, PayloadFormatType payloadFormat,
         EncodingFormatType encodingFormat, std::string sessionId) override;
+
+    /**
+     * @brief Register an operation task with the manager.
+     * @param[in] operationID - Unique identifier for the operation.
+     * @param[in] task - Pointer to the OperationTask instance.
+     */
+    void registerOperationTask(uint32_t operationID,
+                               std::shared_ptr<OperationTaskIface> task);
+
+    /**
+     * @brief Get the next available operation ID.
+     * @return uint32_t - The next available operation ID, or 0 if none
+     * available.
+     */
+    uint32_t getNextAvailableOperationId();
 
     /** @brief Implementation for GetSupportedOperations
      *  Report the list of supported Redfish operations for a specified target
@@ -351,19 +365,6 @@ class Manager :
         return "";
     }
 
-    uint32_t nextOperationId()
-    {
-        uint32_t operationId = 0;
-        if (std::filesystem::exists(operationIdFile))
-        {
-            std::ifstream inFile(operationIdFile);
-            inFile >> operationId;
-        }
-        std::ofstream outFile(operationIdFile);
-        outFile << ++operationId;
-
-        return operationId;
-    }
 #endif
 
   private:
@@ -381,8 +382,7 @@ class Manager :
         taskMap_;
     std::unique_ptr<sdbusplus::server::manager_t> objManager_;
 #ifdef OEM_AMD
-    std::unique_ptr<sdbusplus::bus::match_t> cacheCompleteSignal_;
-    std::unique_ptr<OperationSession> opSession_;
+    std::unique_ptr<CacheManagerObject> cacheManagerObj_;
 #endif
 };
 
