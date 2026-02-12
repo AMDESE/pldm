@@ -37,5 +37,19 @@ void logCompletionCodeError(uint8_t cc);
  * @param payload Vector of bytes representing the binary payload.
  */
 void logHexPayload(const std::vector<uint8_t>& payload);
+#ifdef OEM_AMD
+/**
+ * @brief Load processor URI from device metadata file
+ *
+ * This function reads the RDE device metadata file and looks up the processor
+ * URI for a given device UUID. The processor URI is used to identify devices
+ * that support caching operations.
+ *
+ * @param[in] devUUID Device UUID to lookup
+ * @return Processor URI string in format "schema/deviceId/", or empty string
+ *         if not found
+ */
+std::string loadProcessorURI(const std::string& devUUID);
+#endif
 
 } // namespace pldm::rde

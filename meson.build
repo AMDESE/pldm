@@ -86,6 +86,10 @@ if get_option('softoff').allowed()
         join_paths(package_datadir, 'softoff'),
     )
 endif
+
+if get_option('oem-amd').enabled()
+    add_project_arguments('-DOEM_AMD', language: 'cpp')
+endif
 if get_option('oem-ibm').allowed()
     conf_data.set_quoted(
         'FILE_TABLE_JSON',
@@ -113,9 +117,6 @@ if get_option('oem-ibm').allowed()
     )
     conf_data.set('DMA_MAXSIZE', get_option('oem-ibm-dma-maxsize'))
     add_project_arguments('-DOEM_IBM', language: 'cpp')
-endif
-if get_option('oem-amd').allowed()
-    add_project_arguments('-DOEM_AMD', language: 'cpp')
 endif
 conf_data.set(
     'NUMBER_OF_REQUEST_RETRIES',
@@ -241,6 +242,12 @@ deps = [
 ]
 
 oem_files = []
+
+if get_option('oem-amd').enabled()
+    subdir('oem/amd')
+    deps += oem_amd_dep
+endif
+
 if get_option('oem-ampere').allowed()
     subdir('oem/ampere')
 endif
@@ -248,10 +255,6 @@ endif
 if get_option('libpldmresponder').allowed()
     subdir('libpldmresponder')
     deps += [libpldmresponder_dep]
-endif
-
-if get_option('oem-amd').enabled()
-    oem_amd_pldm_sources += files('oem/amd/platform-mc/platform_manager.cpp')
 endif
 
 executable(

@@ -9,6 +9,10 @@
 #include "xyz/openbmc_project/RDE/Common/common.hpp"
 #include "xyz/openbmc_project/RDE/Device/server.hpp"
 #include "xyz/openbmc_project/RDE/Manager/server.hpp"
+#ifdef OEM_AMD
+#include "operation_task.hpp"
+#include "rde_cache_manager.hpp"
+#endif
 
 #include <libpldm/base.h>
 #include <libpldm/rde.h>
@@ -30,6 +34,7 @@
 
 namespace pldm::rde
 {
+class Manager; // Forward declaration
 using VariantValue = std::variant<int64_t, std::string>;
 using PropertyMap = std::map<std::string, VariantValue>;
 using SchemaResourcesType = std::map<std::string, PropertyMap>;
@@ -82,6 +87,90 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
     void refreshDeviceInfo() override;
 
     void performRDEOperation(const OperationInfo& opInfo);
+
+#ifdef OEM_AMD
+    /**
+     * @brief Check if the operation should be deferred (cached) instead of
+     * executed.
+     * @param opInfo Operation information
+     * @return true if the operation was deferred, false otherwise
+     */
+    bool shouldDeferOperation(const OperationInfo& opInfo);
+
+    /**
+     * @brief Check if the operation is being replayed
+     * @param opInfo Operation information
+     * @return true if this is a replayed operation
+     */
+    bool isReplayOperation(const OperationInfo& opInfo) const;
+
+    /**
+     * @brief Check if operation can be cached (validates type, UUID, etc.)
+     * @param opInfo Operation information
+     * @return true if operation can be cached
+     */
+    bool canCacheOperation(const OperationInfo& opInfo) const;
+
+    /**
+     * @brief Cache the operation
+     * @param opInfo Operation information
+     * @param context Context string for logging (e.g., "during replay" or
+     * "failed")
+     * @return true if successfully cached
+     */
+    bool cacheOperation(const OperationInfo& opInfo,
+                        const std::string& context);
+
+    /**
+     * @brief Start replaying cached operations for this device
+     *
+     * This method initializes the cache replay queue and starts replaying
+     * cached operations asynchronously. Each operation is replayed one at a
+     * time, and the next operation is processed after the current one completes
+     * (success or failure).
+     *
+     * Should be called after negotiation is successful.
+     * Cache entries are automatically cleared after being replayed.
+     */
+    void replayCachedOperations();
+
+    /**
+     * @brief Process the next cached operation in the queue
+     *
+     * This method is called when the current operation completes (success or
+     * failure). It processes the next cache entry in the queue and clears the
+     * completed one.
+     */
+    void processNextCachedOperation();
+
+    /**
+     * @brief Set the Manager reference for operation ID generation
+     *
+     * This method sets the Manager reference so that Device can use
+     * the shared operation ID generator with conflict detection.
+     *
+     * @param[in] manager Pointer to the Manager instance
+     */
+    void setManager(Manager* manager);
+
+    /**
+     * @brief Stop cache replay and reset all replay state
+     *
+     * Clears the replay queue, resets current operation ID, and clears
+     * the replay in progress flag. Used when replay must be stopped due to
+     * errors.
+     */
+    void stopReplay();
+
+    /**
+     * @brief Send BIOS zero length command (RDEReplayComplete operationInit)
+     *
+     * This method sends the BIOS zero length command when cache replay
+     * is complete or when there are no cached operations to replay.
+     * Only sends if the device UUID is found in rde_device_metadata.json.
+     */
+    void sendBiosZeroLengthCommand();
+#endif
 
     /**
      * @brief Access the device metadata.
@@ -208,6 +297,13 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
     void shutdown();
 
   private:
+#ifdef OEM_AMD
+    /**
+     * @brief URI for SocConfiguration/Token
+     */
+    static constexpr const char* SocConfigurationTokenURI =
+        "Oem/AMD/SocConfiguration/Token";
+#endif
     /**
      * @brief Constructs schema resource payload based on discovered resources.
      *
@@ -236,6 +332,18 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
     std::unique_ptr<pldm::rde::DictionaryManager> dictionaryManager_;
     std::unique_ptr<DiscoverySession> discovSession_;
     std::unique_ptr<OperationSession> opSession_;
+#ifdef OEM_AMD
+    // Current operation ID being replayed
+    uint32_t currentReplayOperationId_ = 0;
+    // Current operation timestamp being replayed (used as key for completion)
+    uint64_t currentReplayTimestamp_ = 0;
+    // Flag to track if cache replay is in progress
+    bool isReplayInProgress_ = false;
+    // Manager reference for shared operation ID generation
+    Manager* manager_ = nullptr;
+    // Signal match for TaskUpdated to track operation completion
+    std::unique_ptr<sdbusplus::bus::match_t> taskUpdatedMatch_;
+#endif
     bool shuttingDown_;
 };
 
