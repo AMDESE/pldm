@@ -105,6 +105,7 @@ class GetFwVersion : public AmdMctpSfsOp
         app->footer(R"(Example:
       pldmtool amdMctpSfs getFwVersion -m 21 -e 1 --file-out resp.bin
       pldmtool amdMctpSfs getFwVersion -m 21 -e 1 --file-out resp.bin --checksum)");
+      mctpNeighDelAdd = true;
     }
 };
 
@@ -126,6 +127,7 @@ class UpdateFwVersion : public AmdMctpSfsOp
       pldmtool amdMctpSfs updateFwVersion -m 21 -e 1 --file-in req.bin
       pldmtool amdMctpSfs updateFwVersion -m 21 -e 1 --file-in req.bin --checksum
       pldmtool amdMctpSfs updateFwVersion -m 21 -e 1 --file-in req.bin --file-out /tmp/resp.bin --checksum)");
+      mctpNeighDelAdd = true;
     }
 };
 

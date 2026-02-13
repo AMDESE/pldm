@@ -88,7 +88,8 @@ void fillCompletionCode(uint8_t completionCode, ordered_json& data,
  *             -1 or -errno on failure.
  */
 int mctpSockSendRecv(const uint8_t mctpNetworkId, const uint8_t eid,
-                     const bool mctpPreAllocTag,
+                     const bool mctpNeighDelAdd,
+                     const bool mctpPreAllocTag, const uint16_t pollInterval,
                      const std::vector<uint8_t>& requestMsg,
                      void** responseMessage, size_t* responseMessageSize);
 
@@ -163,6 +164,7 @@ class CommandInterface
     bool mctpPreAllocTag = false;
     uint8_t mctpNetworkId = 1;
     uint16_t pollInterval = POLL_INTERVAL;
+    bool mctpNeighDelAdd = false;
 };
 
 } // namespace helper
