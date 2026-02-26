@@ -106,7 +106,10 @@ class Manager : public pldm::MctpDiscoveryHandlerIntf
      */
     void startSensorPolling(pldm_tid_t tid)
     {
-        sensorManager.startPolling(tid);
+        std::cerr << "Disable polling for pldm sensors for now" << tid << std::endl;
+
+        return;
+        // sensorManager.startPolling(tid);
     }
 
     /** @brief Helper function to set available state for pldm request (sensor
