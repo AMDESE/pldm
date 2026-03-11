@@ -57,7 +57,7 @@ class PlatformManager
     exec::task<int> getPDRs(std::shared_ptr<Terminus> terminus);
 
 #ifdef OEM_AMD
-    exec::task<int> get_pdr_from_json(std::shared_ptr<Terminus> terminus);
+    exec::task<int> get_pdr_from_json(std::shared_ptr<Terminus> terminus, std::string targetUuid);
 #endif
 
     /** @brief Fetch PDR from terminus

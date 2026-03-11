@@ -74,16 +74,20 @@ exec::task<int> PlatformManager::initTerminus()
         else
         {
             // read from JSON file
-            auto rc = co_await get_pdr_from_json(terminus);
-            if (rc)
-            {
-                lg2::error(
-                    "Failed to fetch PDRs for terminus with TID from JSON: {TID}, error: {ERROR}",
-                    "TID", tid, "ERROR", rc);
-                continue; // Continue to next terminus
-            }
+            auto mctpInfo = terminusManager.getMctpInfoForTid(tid);
+            if (mctpInfo.has_value()) {
+               std::string uuid = std::get<1>(*mctpInfo);
+               auto rc = co_await get_pdr_from_json(terminus, uuid);
+               if (rc)
+               {
+                   lg2::error(
+                       "Failed to fetch PDRs for terminus with TID from JSON: {TID}, error: {ERROR}",
+                       "TID", tid, "ERROR", rc);
+                   continue; // Continue to next terminus
+               }
 
-            terminus->parseTerminusPDRs();
+               terminus->parseTerminusPDRs();
+           }
         }
 #endif
 
