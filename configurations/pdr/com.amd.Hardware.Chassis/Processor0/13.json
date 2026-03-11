@@ -1,0 +1,380 @@
+{
+    "effecterAuxiliaryNamesPDR": [
+        {
+            "pdr_type": 13,
+            "effecter_id": 2,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "PkgPwrLimit"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 8,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "ReadBIOSBoostFmax"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 9,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "ReadAPMLBoostLimit"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 10,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "WriteAPMLBoostLimit"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 11,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "WriteAPMLBoostLimitAllCores"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 13,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "WriteDramThrottle"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 20,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "CCDBistResult"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 21,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "CCXBistResult"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 29,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "FuseSamplingInit"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 32,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "PostCode"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 34,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "DiePublicSerialNumber"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 66,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "BmcRasPCIeConfigSpace"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 70,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "DimmTempRangeAndRefreshRate"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 71,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "DIMMPowerConsumption"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 72,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "DIMMThermalSensor"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 74,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "ActiveFrequencyLimitCore"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 76,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "SocketFrequencyRange"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 77,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "CurrentBandWidthIOLink"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 78,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "CurrentBandWidthXGMILink"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 80,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "XGMILinkWidthRange"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 81,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "APBState"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 82,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "APBDisable"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 84,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "LCLKDPMLevelRange"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 93,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "PwrEfficiencyModeSelection"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 94,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "DFPStateRange"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 95,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "MaxMinLCLKDPMLevel"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 99,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "BMCRasSetErrThreshold"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 100,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "BMCRasSetOOBConfig"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 102,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "BMCSetRasAction"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 103,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "BMCGetRasActionStatus"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 104,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "BMCPcieConfigWrite"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 106,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "BMCRasDelayResetOnSyncfloodOverride"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 107,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "ResetOnSyncFloodStatus"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 112,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "SpdSidebandRead"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 113,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "SpdSidebandWrite"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 115,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "XGMIPStateRange"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 116,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "CpuRailISOFreqPolicy"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 117,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "PC6Enable"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 118,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "DFCEnable"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 119,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "CC6Enable"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 120,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "DRAMThrottle"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 121,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "PCIeLinkTraining"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 122,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "CCDPowerConsumption"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 124,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "SVI3VRTemp"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 125,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "HSMPCommands"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 126,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "APMLFloorFrequencyLimit"]
+            ]
+        },
+        {
+            "pdr_type": 13,
+            "effecter_id": 256,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "CPUId"]
+            ]
+        }
+    ]
+}
