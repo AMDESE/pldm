@@ -33,7 +33,7 @@ std::vector<std::unique_ptr<CommandInterface>> commands;
  *
  */
 
-constexpr unsigned int SUBTYPE_SFS = 0;
+constexpr uint8_t SUBTYPE_SFS = 2;
 constexpr unsigned int DEV_HDR_SIZE = 7;
 constexpr unsigned int FS_FIELD = 4;
 constexpr unsigned int CS_FIELD = 4;
@@ -42,6 +42,7 @@ constexpr unsigned int COMP_CODE_BYTE = 6;
 constexpr unsigned int MAX_FILE_SIZE = 0x4000;
 constexpr unsigned int AMD_IANA_NUM = 0xe78;
 constexpr unsigned int SFS_POLL_INTERVAL = 900;
+constexpr uint8_t MCTP_IANA_REQUEST_BIT = 0x80;
 
 enum class SfsCommands
 {
@@ -85,7 +86,8 @@ class AmdMctpSfsOp : public CommandInterface
     bool checksum{false};
 
   private:
-    std::vector<uint8_t> rawData{0x7F, 0x00, 0x00, 0x0E, 0x78, 0x80};
+    std::vector<uint8_t> rawData{0x7F, 0x00, 0x00, 0x0E, 0x78,
+                                 MCTP_IANA_REQUEST_BIT | SUBTYPE_SFS};
 
     void appendInfile();
     void handleSFSResponse(const uint8_t*, size_t);
@@ -122,7 +124,7 @@ class UpdateFwVersion : public AmdMctpSfsOp
         app->add_option("-o,--file-out", outFileName,
                         "Write out the received file");
         app->add_flag("-c,--checksum", checksum, "Append/Validate checksum");
-        app->footer(R"(Example: 
+        app->footer(R"(Example:
       pldmtool amdMctpSfs updateFwVersion -m 21 -e 1 --file-in req.bin
       pldmtool amdMctpSfs updateFwVersion -m 21 -e 1 --file-in req.bin --checksum
       pldmtool amdMctpSfs updateFwVersion -m 21 -e 1 --file-in req.bin --file-out /tmp/resp.bin --checksum)");
