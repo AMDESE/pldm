@@ -284,7 +284,9 @@ void AmdMctpSfsOp::handleSFSResponse(const uint8_t* msg, size_t size)
     if (msg[COMP_CODE_BYTE] != 0)
     {
         std::cerr << "Command failed with completion code: "
-                  << msg[COMP_CODE_BYTE] << std::endl;
+                  << std::showbase << std::hex
+                  << static_cast<int>(msg[COMP_CODE_BYTE]) << std::dec
+                  << std::endl;
         return;
     }
 
