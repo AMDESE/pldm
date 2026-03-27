@@ -20,6 +20,13 @@
 #include <string>
 #include <vector>
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include <sys/mman.h>
+#include <unistd.h>
+
 PHOSPHOR_LOG2_USING;
 
 namespace pldm
@@ -608,6 +615,88 @@ int emitRDEDeviceDetectedSignal(
     }
 
     return PLDM_SUCCESS;
+}
+
+void emitPldmMessagePollEventSignal(
+    uint8_t formatVersion, uint8_t tid, const std::string& tName,
+    uint8_t eventClass, uint32_t dataTransferHandle, uint16_t eventId,
+    uint16_t eventDataSize, int fd) {
+
+    try
+    {
+        auto& bus = DBusHandler::getBus();
+        auto msg = bus.new_signal("/xyz/openbmc_project/pldm",
+                                  "xyz.openbmc_project.PLDM.Event",
+                                  "PldmMessagePollEvent");
+
+        // Generate the current timestamp in microseconds
+        uint64_t timestamp = std::chrono::duration_cast<std::chrono::microseconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+
+        // Please follow/comply_with the signature in yaml file
+        msg.append(timestamp,
+           tid,
+           tName,
+           formatVersion,
+           eventClass,
+           eventId,
+           dataTransferHandle,
+           eventDataSize,
+           sdbusplus::message::unix_fd(fd));
+        msg.signal_send();
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Failed to emit PLDM pldmMessagePollEvent signal: {ERROR}",
+                   "ERROR", e.what());
+        return;
+    }
+
+    lg2::info("Emitting PLDM Message Poll Event signal: FormatVersion={FV}, TID={TID}, "
+              "TerminusName={NAME}, EventClass={CLASS}, EventId={ID}, "
+              "DataTransferHandlee={DTH}, "
+              "Size={SIZE}, FD={FD}",
+              "FV", formatVersion,
+              "TID", tid,
+              "NAME", tName,
+              "CLASS", lg2::hex, eventClass,
+              "ID", lg2::hex, eventId,
+              "DTH", lg2::hex, dataTransferHandle,
+              "SIZE", lg2::hex, eventDataSize,
+              "FD", fd);
+}
+
+int create_mem_fd(const std::vector<uint8_t>& data)
+{
+    // Create the anonymous file in RAM
+    int fd = memfd_create("event_data", MFD_CLOEXEC);
+    if (fd == -1) {
+       lg2::error("Failed to create memfd, errno: {ERRNO}",
+                  "ERRNO", errno);
+       return -1;
+    }
+
+    size_t dataSize = data.size();
+    lg2::info("truncate memfd to size {SIZE}", "SIZE", dataSize);
+
+    if (ftruncate(fd, dataSize) == -1) {
+       lg2::error("Failed to truncate memfd to size {SIZE}, errno: {ERRNO}",
+                  "SIZE", dataSize, "ERRNO", errno);
+       close(fd);
+       return -1;
+    }
+
+    if (write(fd, data.data(), dataSize) == -1) {
+       lg2::error("Failed to write to memfd, errno: {ERRNO}", "ERRNO", errno);
+       close(fd);
+       return -1;
+    }
+
+    // Reset the file offset to the beginning for the receiver
+    lseek(fd, 0, SEEK_SET);
+
+    return fd;
 }
 
 void recoverMctpEndpoint(const std::string& endpointObjPath)
