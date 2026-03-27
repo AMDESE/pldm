@@ -216,13 +216,23 @@ class EventManager
      *
      *  @param[in] tid - terminus ID
      *  @param[out] eventClass - Event class
+     *  @param[in] formatVersion - The PLDM version/format of the event data
+     *  @param[in] dataTransferHandle - Handle identifying the specific data block
+     *                                  in the event transfer
      *  @param[out] eventId - Event ID
      *  @param[in] eventMessage - event data of response message
      *
      */
     void callPolledEventHandlers(pldm_tid_t tid, uint8_t eventClass,
-                                 uint16_t eventId,
-                                 std::vector<uint8_t>& eventMessage);
+                                 uint8_t formatVersion, uint32_t dataTransferHandle,
+                                 uint16_t eventId, std::vector<uint8_t>& eventMessage);
+
+    /** @brief Get the terminus name for a given TID
+     *
+     *  @param[in] tid - Terminal ID
+     *  @return The terminus name as a string, or a fallback string if not found
+     */
+    std::string getTerminusName(pldm_tid_t tid) const;
 
     /** @brief Reference of terminusManager */
     TerminusManager& terminusManager;

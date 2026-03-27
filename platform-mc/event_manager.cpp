@@ -446,9 +446,25 @@ int EventManager::getNextPartParameters(
     return PLDM_SUCCESS;
 }
 
+std::string EventManager::getTerminusName(pldm_tid_t tid) const
+{
+    auto it = termini.find(tid);
+    if (it != termini.end())
+    {
+        auto& terminus = it->second;
+        auto tNameOpt = terminus->getTerminusName();
+        if (tNameOpt)
+        {
+            return std::string(*tNameOpt);
+        }
+    }
+    // Fallback: Return TID as a string if name isn't available
+    return std::to_string(tid);
+}
+
 void EventManager::callPolledEventHandlers(pldm_tid_t tid, uint8_t eventClass,
-                                           uint16_t eventId,
-                                           std::vector<uint8_t>& eventMessage)
+                                           uint8_t formatVersion, uint32_t dataTransferHandle,
+                                           uint16_t eventId, std::vector<uint8_t>& eventMessage)
 {
     try
     {
@@ -462,6 +478,18 @@ void EventManager::callPolledEventHandlers(pldm_tid_t tid, uint8_t eventClass,
                 lg2::error(
                     "Failed to handle platform event msg for terminus {TID}, event {EVENTID} return {RET}",
                     "TID", tid, "EVENTID", eventId, "RET", rc);
+            } else {
+                lg2::info("Handle platform event msg for terminus {TID}, event {EVENTID}, size {EVSIZE}",
+                    "TID", tid, "EVENTID", lg2::hex, eventId, "EVSIZE", lg2::hex, eventMessage.size());
+
+                int fd = pldm::utils::create_mem_fd(eventMessage);
+                if (fd != -1) {
+                   std::string tName = getTerminusName(tid);
+                   pldm::utils::emitPldmMessagePollEventSignal(
+                       formatVersion, tid, tName, eventClass, dataTransferHandle,
+                       eventId, eventMessage.size(), fd);
+                   close(fd);
+                }
             }
         }
     }
@@ -538,6 +566,7 @@ exec::task<int> EventManager::pollForPlatformEventTask(
             if (eventHandlers.contains(polledEventClass))
             {
                 callPolledEventHandlers(polledEventTid, polledEventClass,
+                                        formatVersion, pollDataTransferHandle,
                                         polledEventId, eventMessage);
             }
             eventMessage.clear();
