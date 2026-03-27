@@ -1,4 +1,5 @@
 #include "device.hpp"
+#include <regex>
 
 #ifdef OEM_AMD
 #include "manager.hpp"
@@ -10,6 +11,22 @@
 
 namespace pldm::rde
 {
+constexpr const char* pldmService = "xyz.openbmc_project.PLDM";
+constexpr const char* rdeSignalInterface =
+    "xyz.openbmc_project.RDE.OperationTask";
+constexpr const char* rdeSignalMember = "TaskUpdated";
+
+/** @brief Match rule template for RDE Operation Task signal */
+inline constexpr std::string_view rdeOpTaskMatchTemplate =
+    "type='signal',sender='{}',interface='{}',member='{}',path='{}'";
+
+/** @brief Build match rule for RDE Operation Task using object path */
+inline std::string rdeOpTaskMatch(const std::string& objPath)
+{
+    return std::format(rdeOpTaskMatchTemplate, pldmService, rdeSignalInterface,
+                       rdeSignalMember, objPath);
+}
+
 Device::Device(sdbusplus::bus::bus& bus, sdeventplus::Event& event,
                const std::string& path, pldm::InstanceIdDb* instanceIdDb,
                pldm::requester::Handler<pldm::requester::Request>* handler,
@@ -329,7 +346,8 @@ void Device::processNextCachedOperation()
         currentReplayOperationId_ = 0;
         currentReplayTimestamp_ = 0;
         isReplayInProgress_ = false;
-        sendBiosZeroLengthCommand();
+	sendBiosGetCommand();
+        //sendBiosZeroLengthCommand();
         return;
     }
 
@@ -391,6 +409,356 @@ void Device::stopReplay()
     currentReplayOperationId_ = 0;
     currentReplayTimestamp_ = 0;
     isReplayInProgress_ = false;
+}
+
+inline bool writeJsonToFile(const nlohmann::json& jsonData,
+                            const std::string& filePath)
+{
+    try
+    {
+        std::ofstream outFile(filePath);
+        if (!outFile.is_open())
+        {
+            error("RDE: Failed to open file {FILE}", "FILE", filePath);
+            return false;
+        }
+
+        outFile << jsonData.dump(4) << std::endl;
+        outFile.close();
+
+        info("RDE: Successfully wrote JSON to file {FILE}", "FILE", filePath);
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        error("RDE: Exception while writing JSON to file {FILE}: {ERR}",
+              "FILE", filePath, "ERR", e.what());
+        return false;
+    }
+}
+
+inline nlohmann::json handleDeferredBindings(const std::string& bejJsonInput,
+                                             const nlohmann::json& uriMapJson)
+{
+    info("RDE:handleDeferredBindings Enter");
+
+    std::unordered_map<int, std::string> uriMap;
+    for (auto it = uriMapJson.begin(); it != uriMapJson.end(); ++it)
+    {
+        try
+        {
+            int resourceId = std::stoi(it.key());
+            uriMap[resourceId] = it.value();
+        }
+        catch (const std::exception& e)
+        {
+            error(
+                "RDE: Invalid resource ID in uriMapJson: Key={KEY} error={ERR}",
+                "KEY", it.key(), "ERR", e.what());
+        }
+    }
+
+    std::string bejJson = bejJsonInput;
+    std::regex bareObjectRegex("\\{\\s*\"%L(\\d+)\"\\s*\\}");
+    std::ostringstream oss1;
+    std::sregex_iterator begin1(bejJson.begin(), bejJson.end(),
+                                bareObjectRegex);
+    std::sregex_iterator end1;
+    size_t lastPos1 = 0;
+
+    for (auto it = begin1; it != end1; ++it)
+    {
+        oss1 << bejJson.substr(
+            lastPos1,
+            static_cast<size_t>(static_cast<std::ptrdiff_t>(it->position()) -
+                                static_cast<std::ptrdiff_t>(lastPos1)));
+
+        int id = std::stoi((*it)[1]);
+        auto uriIt = uriMap.find(id);
+        if (uriIt != uriMap.end())
+        {
+            oss1 << R"({"@odata.id":")" << uriIt->second << R"("})";
+        }
+        else
+        {
+            oss1 << it->str();
+        }
+        lastPos1 = static_cast<size_t>(it->position() + it->length());
+    }
+    oss1 << bejJson.substr(lastPos1);
+    bejJson = oss1.str();
+
+    std::regex lPattern(R"(%L(\d+))");
+    std::ostringstream oss2;
+    std::sregex_iterator begin2(bejJson.begin(), bejJson.end(), lPattern);
+    std::sregex_iterator end2;
+    size_t lastPos2 = 0;
+
+    for (auto it = begin2; it != end2; ++it)
+    {
+        oss2 << bejJson.substr(
+            lastPos2,
+            static_cast<size_t>(static_cast<std::ptrdiff_t>(it->position()) -
+                                static_cast<std::ptrdiff_t>(lastPos2)));
+
+        int id = std::stoi((*it)[1]);
+        auto uriIt = uriMap.find(id);
+        if (uriIt != uriMap.end())
+        {
+            oss2 << uriIt->second;
+        }
+        else
+        {
+            oss2 << it->str();
+        }
+        lastPos2 = static_cast<size_t>(it->position() + it->length());
+    }
+    oss2 << bejJson.substr(lastPos2);
+    bejJson = oss2.str();
+
+    bejJson = std::regex_replace(bejJson, std::regex(R"(%I(\d+))"), "$1");
+
+    info("RDE: BEJ JSON String Output: {JSON}", "JSON", bejJson);
+
+    nlohmann::json jsonPayload;
+    if (!bejJson.empty())
+    {
+        jsonPayload = nlohmann::json::parse(bejJson);
+    }
+    return jsonPayload;
+}
+
+void Device::handleBiosGetTaskSignal(
+    sdbusplus::message::message& msg,
+    uint32_t operationID,
+    std::shared_ptr<std::string> payloadBuffer)
+{
+    std::map<std::string, std::variant<std::string, uint16_t>> changed;
+
+    try
+    {
+        msg.read(changed);
+    }
+    catch (const std::exception& e)
+    {
+        error("RDE BIOS GET: Failed to read signal: {MSG}", "MSG",
+              e.what());
+        return;
+    }
+
+    std::optional<uint16_t> completionCode;
+
+    // Handle both naming styles
+    if (auto it = changed.find("CompletionCode"); it != changed.end())
+    {
+        if (auto val = std::get_if<uint16_t>(&it->second))
+        {
+            completionCode = *val;
+        }
+    }
+    if (!completionCode)
+    {
+        if (auto it = changed.find("return_code"); it != changed.end())
+        {
+            if (auto val = std::get_if<uint16_t>(&it->second))
+            {
+                completionCode = *val;
+            }
+        }
+    }
+
+    // Capture payload
+    if (auto it = changed.find("payload"); it != changed.end())
+    {
+        if (auto val = std::get_if<std::string>(&it->second))
+        {
+            *payloadBuffer = *val;
+
+            info("RDE BIOS GET: Payload update len={LEN} OID={OID}",
+                 "LEN", payloadBuffer->size(), "OID", operationID);
+        }
+    }
+
+    if (!completionCode)
+    {
+        return;
+    }
+
+/*    constexpr uint16_t operationCompleted =
+        static_cast<uint16_t>(OpState::OperationCompleted);
+    constexpr uint16_t operationFailed =
+        static_cast<uint16_t>(OpState::OperationFailed);
+    constexpr uint16_t operationCancelled =
+        static_cast<uint16_t>(OpState::Cancelled);
+    constexpr uint16_t operationTimedOut =
+        static_cast<uint16_t>(OpState::TimedOut);
+*/
+    info("PARSE COMPLETION CODE");
+    if (*completionCode == 7)
+    {
+        info("RDE BIOS GET: Completed OID={OID}", "OID", operationID);
+
+        if (payloadBuffer->empty())
+        {
+            error("RDE BIOS GET: Completed but payload empty OID={OID}",
+                  "OID", operationID);
+        }
+        else
+        {
+            try
+            {
+                nlohmann::json uriMapJson = nlohmann::json::object();
+
+                if (!resourceRegistry_)
+                {
+                    error("RDE BIOS GET: resourceRegistry_ is null");
+                }
+                else
+                {
+                    const auto& resourceMap =
+                        resourceRegistry_->getResourceMap();
+
+                    for (const auto& [resourceId, info] : resourceMap)
+                    {
+                       uriMapJson[resourceId] = info.uri;
+                    }
+                }
+
+                auto parsedPayload =
+                    handleDeferredBindings(*payloadBuffer, uriMapJson);
+
+                info("RDE BIOS GET: Parsed payload: {PAYLOAD}",
+                     "PAYLOAD", parsedPayload.dump());
+
+                const std::string filePath = "/tmp/rde_bios_get_" + deviceUUID() + ".json";
+                writeJsonToFile(parsedPayload, filePath);
+            }
+            catch (const std::exception& e)
+            {
+                error("RDE BIOS GET: Payload processing failed: {MSG}",
+                      "MSG", e.what());
+            }
+        }
+
+        biosGetTaskUpdatedMatch_.reset();
+
+        sendBiosZeroLengthCommand();
+
+        return;
+    }
+
+/*    if (*completionCode == operationFailed ||
+        *completionCode == operationCancelled ||
+        *completionCode == operationTimedOut)
+    {
+        error("RDE BIOS GET: Failed OID={OID}, code={CODE}",
+              "OID", operationID, "CODE", *completionCode);
+
+        biosGetTaskUpdatedMatch_.reset();
+        return;
+    }
+*/
+    info("RDE BIOS GET: Interim update OID={OID}, code={CODE}",
+         "OID", operationID, "CODE", *completionCode);
+}
+
+void Device::sendBiosGetCommand()
+{
+    info("*********ISSUING SEND BIOS GET*********");
+    // Check if UUID exists in rde_device_metadata.json
+    std::string processorURI = loadProcessorURI(deviceUUID());
+    auto payloadBuffer = std::make_shared<std::string>();
+
+    if (processorURI.empty())
+    {
+        info(
+            "RDE Cache Replay: Device UUID={UUID} not found in rde_device_metadata.json, skipping BIOS zero length command",
+            "UUID", deviceUUID());
+        return;
+    }
+
+    // Send BIOS zero length command when cache replay is complete
+    if (!manager_)
+    {
+        error(
+            "RDE Cache Replay: Manager not set, cannot send BIOS get command for UUID={UUID}",
+            "UUID", deviceUUID());
+        return;
+    }
+
+    try
+    {
+        uint32_t operationID = manager_->getNextAvailableOperationId();
+        if (operationID == 0)
+        {
+            error(
+                "RDE Cache Replay: Failed to generate operation ID for BIOS get command, UUID={UUID}",
+                "UUID", deviceUUID());
+            return;
+        }
+
+        OperationType operationType = OperationType::READ;
+        std::string subURI = SocConfigurationTokenURI;
+        std::string payload = "";
+        PayloadFormatType payloadFormat = PayloadFormatType::Inline;
+        EncodingFormatType encodingType = EncodingFormatType::JSON;
+        std::string sessionID = manager_->getJSONSchema();
+        if (sessionID.empty())
+        {
+            error(
+                "RDE Cache Replay: Cannot find session ID for BIOS zero length command, UUID={UUID}",
+                "UUID", deviceUUID());
+            return;
+        }
+
+        std::string taskPathStr = "/xyz/openbmc_project/RDE/OperationTask/" +
+                                  std::to_string(operationID);
+
+        OperationInfo opInfo{operationID,   operationType, subURI,
+                             deviceUUID(),  eid(),         payload,
+                             payloadFormat, encodingType,  sessionID,
+                             taskPathStr};
+
+        auto task = std::make_shared<OperationTask>(bus_, opInfo.opTaskPath);
+        manager_->registerOperationTask(operationID, task);
+
+
+        std::weak_ptr<Device> weakSelf = shared_from_this();
+
+        biosGetTaskUpdatedMatch_ = std::make_unique<sdbusplus::bus::match_t>(
+                bus_, rdeOpTaskMatch(taskPathStr),
+                [weakSelf, operationID, payloadBuffer](sdbusplus::message::message& msg) {
+            auto self = weakSelf.lock();
+            if (!self)
+            {
+                return;
+            }
+
+            self->handleBiosGetTaskSignal(msg, operationID, payloadBuffer);
+        });
+
+	std::shared_ptr<Device> self = shared_from_this();
+        opSession_ = std::make_unique<OperationSession>(self, opInfo);
+        if (!opSession_)
+        {
+            error(
+                "RDE Cache Replay: Failed to create OperationSession for BIOS GET command, UUID={UUID}",
+                "UUID", deviceUUID());
+
+            return;
+        }
+
+        info(
+            "RDE Cache Replay: Sending BIOS GET command for UUID={UUID}, OperationID={OID}",
+            "UUID", deviceUUID(), "OID", operationID);
+        opSession_->doOperationInit();
+    }
+    catch (const std::exception& e)
+    {
+        error(
+            "RDE Cache Replay: Failed to send BIOS GET command for UUID={UUID}: {MSG}",
+           "UUID", deviceUUID(), "MSG", e.what());
+    }
 }
 
 void Device::sendBiosZeroLengthCommand()
@@ -457,7 +825,8 @@ void Device::sendBiosZeroLengthCommand()
             error(
                 "RDE Cache Replay: Failed to create OperationSession for BIOS zero length command, UUID={UUID}",
                 "UUID", deviceUUID());
-            return;
+
+	    return;
         }
 
         info(

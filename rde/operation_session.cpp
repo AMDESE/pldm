@@ -281,6 +281,7 @@ void OperationSession::doOperationInit()
 
     if (oipInfo.operationType == OperationType::READ)
     {
+	info("Operation READ");
         sendDataTransferHandle = 0;
         operationLocatorLength = 0;
         requestPayloadLength = 0;
@@ -372,6 +373,7 @@ void OperationSession::doOperationInit()
         operationLocatorLength + requestPayloadLength);
     auto requestMsg = new (request.data()) pldm_msg;
 
+    info("Encode operation");
     rc = encode_rde_operation_init_req(
         instanceId, currentResourceId_, operationID,
         static_cast<uint8_t>(oipInfo.operationType), &operationFlags,
@@ -387,6 +389,7 @@ void OperationSession::doOperationInit()
         return;
     }
 
+    info("register Request");
     rc = dev->getHandler()->registerRequest(
         eid_, instanceId, PLDM_RDE, PLDM_RDE_OPERATION_INIT, std::move(request),
         [this](uint8_t /*eid*/, const pldm_msg* respMsg, size_t rxLen) {
@@ -414,6 +417,7 @@ void OperationSession::doOperationInit()
 void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
                                                size_t rxLen)
 {
+    info("RDE Operation Init Response");
     auto dev = device_.lock();
     if (!dev)
     {

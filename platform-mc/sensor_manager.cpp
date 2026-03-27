@@ -266,9 +266,9 @@ exec::task<int> SensorManager::doSensorPollingTask(pldm_tid_t tid)
                 }
                 else
                 {
-                    lg2::error(
-                        "Failed to get sensor value for terminus {TID}, error: {RC}",
-                        "TID", tid, "RC", rc);
+                    //lg2::error(
+                      //  "Failed to get sensor value for terminus {TID}, error: {RC}",
+                        //"TID", tid, "RC", rc);
                 }
             }
 
@@ -347,9 +347,9 @@ exec::task<int> SensorManager::getSensorReading(
         reinterpret_cast<uint8_t*>(&presentReading));
     if (rc)
     {
-        lg2::error(
-            "Failed to decode response GetSensorReading for terminus ID {TID}, sensor Id {ID}, error {RC}.",
-            "TID", tid, "ID", sensorId, "RC", rc);
+        //lg2::error(
+          //  "Failed to decode response GetSensorReading for terminus ID {TID}, sensor Id {ID}, error {RC}.",
+            //"TID", tid, "ID", sensorId, "RC", rc);
         sensor->handleErrGetSensorReading();
         co_return rc;
     }

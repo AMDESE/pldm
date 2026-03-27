@@ -31,6 +31,8 @@
 #include <tuple>
 #include <variant>
 #include <vector>
+#include <sdbusplus/bus/match.hpp>
+#include <sdbusplus/message.hpp>
 
 namespace pldm::rde
 {
@@ -170,6 +172,9 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
      * Only sends if the device UUID is found in rde_device_metadata.json.
      */
     void sendBiosZeroLengthCommand();
+
+    void sendBiosGetCommand();
+
 #endif
 
     /**
@@ -332,6 +337,13 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
     std::unique_ptr<pldm::rde::DictionaryManager> dictionaryManager_;
     std::unique_ptr<DiscoverySession> discovSession_;
     std::unique_ptr<OperationSession> opSession_;
+    std::unique_ptr<sdbusplus::bus::match_t> biosGetTaskUpdatedMatch_;
+
+        void handleBiosGetTaskSignal(
+        sdbusplus::message::message& msg,
+        uint32_t operationID,
+        std::shared_ptr<std::string> payloadBuffer);
+
 #ifdef OEM_AMD
     // Current operation ID being replayed
     uint32_t currentReplayOperationId_ = 0;
