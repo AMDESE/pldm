@@ -17,6 +17,7 @@
 #include <xyz/openbmc_project/Inventory/Manager/client.hpp>
 #include <xyz/openbmc_project/Logging/Entry/server.hpp>
 #include <xyz/openbmc_project/ObjectMapper/client.hpp>
+#include <xyz/openbmc_project/PLDM/Event/server.hpp>
 
 #include <cstdint>
 #include <deque>
@@ -579,6 +580,32 @@ int emitDiscoveryCompleteSignal(
 int emitRDEDeviceDetectedSignal(
     uint8_t tid, eid mctpEid, pldm::UUID devUUID,
     const std::vector<std::vector<uint8_t>>& pdrPayloads);
+
+/** @brief Emit a D-Bus signal for a PLDM Message Poll event.
+ *
+ *  This signal notifies subscribers that a message poll event has been
+ *  received from a specific terminal, providing the necessary metadata
+ *  to retrieve the event data.
+ *
+ *  @param[in] formatVersion - The version of the event format (from PLDM spec)
+ *  @param[in] tid - Terminal ID of the source
+ *  @param[in] tName - Terminal name or identifier string
+ *  @param[in] eventClass - The class of the event being polled
+ *  @param[in] dataTransferHandle - Handle used to identify the data transfer
+ *  @param[in] eventId - The unique identifier for the event
+ *  @param[in] eventDataSize - The size of the event data in bytes
+ *  @param[in] fd - File descriptor for the data transfer, if applicable
+ */
+void emitPldmMessagePollEventSignal(
+    uint8_t formatVersion, uint8_t tid, const std::string& tName,
+    uint8_t eventClass, uint32_t dataTransferHandle,
+    uint16_t eventId, uint16_t eventDataSize, int fd);
+
+/** @brief Create a memfd and write data to it
+ *  @param[in] data - data to write to the memfd
+ *  @return fd - the file descriptor of the memfd
+ */
+int create_mem_fd(const std::vector<uint8_t>& data);
 
 /**
  *  @brief call Recover() method to recover an MCTP Endpoint
