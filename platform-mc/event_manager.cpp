@@ -76,12 +76,19 @@ int EventManager::handlePlatformEvent(
     /* EventClass pldmMessagePollEvent `Table 11 - PLDM Event Types` DSP0248 */
     if (eventClass == PLDM_MESSAGE_POLL_EVENT)
     {
-        lg2::info("Received pldmMessagePollEvent for terminus {TID}", "TID",
-                  tid);
+        lg2::info("Received pldmMessagePollEvent for terminus {TID} and eventid {EVENTID}", "TID",
+                  tid, "EVENTID", lg2::hex, eventId);
         pldm_message_poll_event poll_event{};
         auto rc = decode_pldm_message_poll_event_data(eventData, eventDataSize,
                                                       &poll_event);
-        if (rc)
+        /*
+         * eventId is assigned NULL for the command PlatformEventMessage (0xA)
+         * but not for the command PollForPlatformEventMessage (0xB).
+         * Ignore error if eventID is not PLDM_PLATFORM_EVENT_ID_NULL since
+         * we need to populate terminus info such as pollEvent and pollEventId.
+         * from poll_event.
+         */
+        if (rc && (eventId == PLDM_PLATFORM_EVENT_ID_NULL))
         {
             lg2::error(
                 "Failed to decode PldmMessagePollEvent event, error {RC} ",
