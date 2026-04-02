@@ -98,6 +98,14 @@
         },
         {
             "pdr_type": 13,
+            "effecter_id": 69,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "BmcRasFchResetReason"]
+            ]
+        },
+        {
+            "pdr_type": 13,
             "effecter_id": 70,
             "effecter_count": 1,
             "effecter_names": [
