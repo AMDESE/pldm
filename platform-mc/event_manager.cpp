@@ -19,6 +19,84 @@ namespace platform_mc
 {
 namespace fs = std::filesystem;
 
+void EventManager::logPldmErrorEvent(
+    pldm_tid_t tid, uint16_t eventId, uint8_t eventClass,
+    const uint8_t* eventData, size_t eventDataSize)
+{
+    fs::path dir{"/tmp/pldm_event_log"};
+    fs::path filePath{"<unknown>"};
+
+    try
+    {
+        // Ensure directory exists (safe even if already exists)
+        fs::create_directories(dir);
+
+        // Epoch timestamp (seconds)
+        auto now = std::chrono::system_clock::now();
+        auto epoch =
+            std::chrono::duration_cast<std::chrono::seconds>(
+                now.time_since_epoch())
+                .count();
+
+        static std::atomic<uint32_t> counter{0};
+
+        // Build filename with hex fields
+        std::ostringstream filename;
+        filename << "pldm_oob_err_" << epoch
+                 << "_" << counter++
+                 << "_ec0x" << std::hex << std::setw(2) << std::setfill('0')
+                 << static_cast<int>(eventClass)
+                 << "_tid0x" << std::setw(2)
+                 << static_cast<int>(tid)
+                 << "_eventid0x" << std::setw(4)
+                 << eventId
+                 << ".bin";
+
+        filePath = dir / filename.str();
+
+        // Open file
+        std::ofstream ofs(filePath, std::ios::binary);
+        if (!ofs)
+        {
+            lg2::error(
+                "Failed to open PLDM event file. PATH={PATH} ERRNO={ERRNO} ERRMSG={ERRMSG}",
+                "PATH", filePath.string(),
+                "ERRNO", errno,
+                "ERRMSG", std::strerror(errno));
+
+            return;
+        }
+
+        // Write raw event data
+        ofs.write(reinterpret_cast<const char*>(eventData),
+                  eventDataSize);
+
+        if (!ofs)
+        {
+            lg2::error(
+                "Failed to write PLDM event data. PATH={PATH}",
+                "PATH", filePath.string());
+            return;
+        }
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error(
+            "Exception writing PLDM event file. PATH={PATH} ERROR={ERROR}",
+            "PATH", filePath.string(),
+            "ERROR", e.what());
+        return;
+    }
+
+    // Use debug to avoid log flooding in production
+    lg2::debug(
+        "PLDM event file created. PATH={PATH} TID={TID} EVENTID={EVID} EVENTCLASS={EVCLASS}",
+        "PATH", filePath.string(),
+        "TID", static_cast<uint32_t>(tid),
+        "EVID", lg2::hex, static_cast<uint32_t>(eventId),
+        "EVCLASS", lg2::hex, static_cast<uint32_t>(eventClass));
+}
+
 int EventManager::handlePlatformEvent(
     pldm_tid_t tid, uint16_t eventId, uint8_t eventClass,
     const uint8_t* eventData, size_t eventDataSize)
@@ -99,6 +177,9 @@ int EventManager::handlePlatformEvent(
         auto it = termini.find(tid);
         if (it != termini.end())
         {
+            if (eventId != PLDM_PLATFORM_EVENT_ID_NULL && verbose)
+               logPldmErrorEvent(tid, eventId, eventClass, eventData, eventDataSize);
+
             auto& terminus = it->second; // Reference for clarity
             terminus->pollEvent = true;
             terminus->pollEventId = poll_event.event_id;

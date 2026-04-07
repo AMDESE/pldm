@@ -40,7 +40,7 @@ class EventManager
     virtual ~EventManager() = default;
 
     explicit EventManager(TerminusManager& terminusManager,
-                          TerminiMapper& termini) :
+                          TerminiMapper& termini, const bool verbose) :
         terminusManager(terminusManager), termini(termini)
     {
         // Default response handler for PollForPlatFormEventMessage
@@ -59,6 +59,7 @@ class EventManager
                 return this->handlePlatformEvent(tid, eventId, PLDM_CPER_EVENT,
                                                  eventData, eventDataSize);
             }});
+        this->verbose = verbose;
     };
 
     /** @brief Handle platform event
@@ -220,6 +221,24 @@ class EventManager
                                  uint16_t eventId,
                                  std::vector<uint8_t>& eventMessage);
 
+    /** @brief Logs a PLDM error event to a binary file in the local filesystem.
+     *
+     *  This function creates a binary file containing the raw event data for
+     *  out-of-band error analysis. Files are stored in /tmp/pldm_event_log with
+     *  filenames capturing the timestamp, event class, TID, and event ID.
+     *
+     *  @param[in] tid - Terminus ID that generated the event
+     *  @param[in] eventId - The specific PLDM event identifier
+     *  @param[in] eventClass - The class of the PLDM event (e.g., sensor, task)
+     *  @param[in] eventData - Pointer to the raw binary event data payload
+     *  @param[in] eventDataSize - Size of the event data payload in bytes
+     *
+     *  @return None
+     */
+    void logPldmErrorEvent(
+        pldm_tid_t tid, uint16_t eventId, uint8_t eventClass,
+        const uint8_t* eventData, size_t eventDataSize);
+
     /** @brief Reference of terminusManager */
     TerminusManager& terminusManager;
 
@@ -231,6 +250,8 @@ class EventManager
 
     /** @brief map of PLDM event type of polled event to EventHandlers */
     pldm::platform_mc::EventMap eventHandlers;
+
+    bool verbose{false};
 };
 } // namespace platform_mc
 } // namespace pldm
