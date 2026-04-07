@@ -36,13 +36,13 @@ class Manager : public pldm::MctpDiscoveryHandlerIntf
     ~Manager() = default;
 
     explicit Manager(sdeventplus::Event& event, RequesterHandler& handler,
-                     pldm::InstanceIdDb& instanceIdDb) :
+                     pldm::InstanceIdDb& instanceIdDb, const bool verbose) :
         terminusManager(event, handler, instanceIdDb, termini, this,
                         pldm::BmcMctpEid),
         platformManager(terminusManager, termini, this),
         sensorManager(event, terminusManager, termini, this),
-        eventManager(terminusManager, termini)
-    {}
+        eventManager(terminusManager, termini, verbose)
+    {this->verbose = verbose;}
 
     /** @brief Helper function to do the actions before discovering terminus
      *
@@ -287,6 +287,8 @@ class Manager : public pldm::MctpDiscoveryHandlerIntf
 
     /** @brief map of PLDM event type to EventHandlers */
     PollHandlers pollHandlers;
+
+    bool verbose{false};
 };
 } // namespace platform_mc
 } // namespace pldm

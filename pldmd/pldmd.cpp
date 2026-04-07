@@ -220,7 +220,7 @@ int main(int argc, char** argv)
     DBusHandler dbusHandler;
 
     std::unique_ptr<platform_mc::Manager> platformManager =
-        std::make_unique<platform_mc::Manager>(event, reqHandler, instanceIdDb);
+        std::make_unique<platform_mc::Manager>(event, reqHandler, instanceIdDb, verbose);
 
 #ifdef LIBPLDMRESPONDER
     using namespace pldm::state_sensor;
