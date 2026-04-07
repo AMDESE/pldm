@@ -442,6 +442,19 @@ class Terminus
      */
     std::vector<std::string> getEffecterNames(const pldm::platform_mc::EffecterID& effecterId);
 
+#ifdef OEM_AMD
+    /** @brief Updates the polling rates for numeric sensors.
+     *
+     *  This function iterates through all numeric sensors and checks if a
+     *  corresponding numeric effecter exists with the same ID. If a match
+     *  is found, polling is disabled for that sensor to prevent redundant
+     *  operations or conflicts.
+     *
+     *  @return None
+     */
+    void updateSensorPollRates();
+#endif
+
     /** @brief Add the next sensor PDR to this terminus, iterated by
      *         sensorPdrIt.
      */
