@@ -249,7 +249,11 @@ exec::task<int> SensorManager::doSensorPollingTask(pldm_tid_t tid)
 
             sd_event_now(event.get(), CLOCK_MONOTONIC, &t1);
             elapsed = t1 - sensor->timeStamp;
+#ifdef OEM_AMD
+            if (sensor->updateTime != 0 && ((sensor->updateTime <= elapsed) || (!sensor->timeStamp)))
+#else
             if ((sensor->updateTime <= elapsed) || (!sensor->timeStamp))
+#endif
             {
                 rc = co_await getSensorReading(sensor);
 
