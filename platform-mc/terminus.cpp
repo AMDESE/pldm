@@ -283,6 +283,23 @@ void Terminus::parseTerminusPDRs()
     addNextSensorFromPDRs();
 }
 
+#ifdef OEM_AMD
+void Terminus::updateSensorPollRates() {
+    for (auto& sensor : numericSensors) {
+        auto it = std::find_if(numericEffecters.begin(), numericEffecters.end(),
+            [&sensor](const auto& effecter) {
+                return effecter->effecterId == sensor->sensorId;
+            });
+
+        if (it != numericEffecters.end()) {
+            lg2::info("Match found: Sensor {ID} has corresponding Effecter. Disabling polling.",
+                     "ID", sensor->sensorId);
+            sensor->updateTime = 0;
+        }
+    }
+}
+#endif
+
 void Terminus::addNextSensorFromPDRs()
 {
     sensorCreationEvent.reset();
@@ -361,6 +378,9 @@ void Terminus::addNextEffecterFromPDRs()
         lg2::info(
             "Terminus ID {TID}: Completed creating effecters. Total effecters: {NEFFECTERS}",
             "TID", tid, "NEFFECTERS", numericEffecters.size());
+#ifdef OEM_AMD
+        updateSensorPollRates();
+#endif
     }
 }
 
@@ -727,7 +747,6 @@ void Terminus::addNumericEffecter(
 
         auto effecter = std::make_shared<NumericEffecter>(
             tid, pdr, effecterName, inventoryPath, *this, terminusManager, terminusScope);
-        lg2::info("Created NumericEffecter {NAME}", "NAME", effecterName);
         numericEffecters.emplace_back(effecter);
     }
     catch (const std::exception& e)
