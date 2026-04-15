@@ -317,95 +317,97 @@ exec::task<int> PlatformManager::get_pdr_from_json(
             throw std::runtime_error("Could not open UUID mapping file");
         }
 
-        // 2. Parse directly into a set
+        // 2. Parse directly into a map
         auto j = nlohmann::json::parse(uuidFile);
-        std::unordered_set<std::string> valid_uuids =
-            j.get<std::unordered_set<std::string>>();
+        auto uuid_map = j.get<std::unordered_map<std::string, int>>();
 
-        // Early exit if the UUID is not in our allowlist
-        if (!valid_uuids.contains(targetUuid))
+        // Early exit if the UUID is not in the map
+        auto it = uuid_map.find(targetUuid);
+        if (it == uuid_map.end())
         {
-            co_return PLDM_ERROR_INVALID_DATA; // or a specific "not found"
-                                               // status
+            // UUID not found in the mapping
+            co_return PLDM_ERROR_INVALID_DATA;
         }
 
-        // Only iterate immediate contents of pdrDir
-        for (const auto& subDir : std::filesystem::directory_iterator(pdrDir))
+        int processorIndex = it->second;
+        std::string procName = "Processor" + std::to_string(processorIndex);
+        std::string procPdrDir = pdrDir + "/" + procName;
+        lg2::info("Loading PDRs for TID {TID} from {PATH}", "TID", tid, "PATH", procPdrDir);
+
+        if (!std::filesystem::exists(procPdrDir)) {
+           lg2::error("Directory {PATH} does not exist for TID {TID}", "PATH", procPdrDir, "TID", tid);
+           co_return PLDM_ERROR;
+        }
+
+        // Iterate directly over the files in ProcessorX/
+        for (const auto& entry : std::filesystem::directory_iterator(procPdrDir))
         {
-            // IGNORE all files in the top pdrDir; only enter subdirectories
-            if (!subDir.is_directory())
+            // Ignore directories, we only want the .json files
+            if (entry.is_directory())
             {
                 continue;
             }
 
-            // Only iterate immediate contents of the subdirectory (e.g.,
-            // 'Processor0')
-            for (const auto& subFile :
-                 std::filesystem::directory_iterator(subDir.path()))
+            if (entry.path().extension() == ".json")
             {
-                // IGNORE everything except regular .json files
-                if (subFile.is_regular_file() &&
-                    subFile.path().extension() == ".json")
-                {
-                    std::ifstream jsonFile(subFile.path());
-                    auto jData =
-                        nlohmann::ordered_json::parse(jsonFile, nullptr, false);
+                std::ifstream jsonFile(entry.path());
+                auto jData =
+                    nlohmann::ordered_json::parse(jsonFile, nullptr, false);
 
-                    if (jData.is_discarded())
+                if (jData.is_discarded())
+                {
+                    lg2::error("Parsing JSON failed for {PATH}", "PATH",
+                               entry.path().string());
+                    continue; // Skip bad file, continue to next
+                }
+
+                for (const auto& [pdrName, pdrArray] : jData.items())
+                {
+                    // Strict check: ignore keys that aren't arrays
+                    if (!pdrArray.is_array())
                     {
-                        lg2::error("Parsing JSON failed for {PATH}", "PATH",
-                                   subFile.path().string());
-                        continue; // Skip bad file, continue to next
+                        continue;
                     }
 
-                    for (const auto& [pdrName, pdrArray] : jData.items())
+                    for (const auto& pdrJson : pdrArray)
                     {
-                        // Strict check: ignore keys that aren't arrays
-                        if (!pdrArray.is_array())
+                        if (pdrName == "entityAuxiliaryNamePDRs")
                         {
-                            continue;
+                            if (auto pdrVec =
+                                    decode_entity_auxiliary_names_pdr(
+                                        pdrJson))
+                            {
+                                terminus->pdrs.emplace_back(
+                                    std::move(*pdrVec));
+                            }
                         }
-
-                        for (const auto& pdrJson : pdrArray)
+                        else if (pdrName == "compactNumericSensorPDRs")
                         {
-                            if (pdrName == "entityAuxiliaryNamePDRs")
-                            {
-                                if (auto pdrVec =
-                                        decode_entity_auxiliary_names_pdr(
-                                            pdrJson))
-                                {
-                                    terminus->pdrs.emplace_back(
-                                        std::move(*pdrVec));
-                                }
-                            }
-                            else if (pdrName == "compactNumericSensorPDRs")
-                            {
-                                if (auto pdrVec =
-                                        decode_compact_numeric_sensor_pdr(
-                                            tid, pdrJson))
-                                {
-                                    terminus->pdrs.emplace_back(
-                                        std::move(*pdrVec));
-                                }
-                            }
-                            else if (pdrName == "numericEffecterPDRs")
-                            {
-                                if (auto pdrVec = decode_numeric_effecter_pdr(
+                            if (auto pdrVec =
+                                    decode_compact_numeric_sensor_pdr(
                                         tid, pdrJson))
-                                {
-                                    terminus->pdrs.emplace_back(
-                                        std::move(*pdrVec));
-                                }
-                            }
-                            else if (pdrName == "effecterAuxiliaryNamesPDR")
                             {
-                                if (auto pdrVec =
-                                        decode_effecter_auxiliary_names_pdr(
-                                            tid, pdrJson))
-                                {
-                                    terminus->pdrs.emplace_back(
-                                        std::move(*pdrVec));
-                                }
+                                terminus->pdrs.emplace_back(
+                                    std::move(*pdrVec));
+                            }
+                        }
+                        else if (pdrName == "numericEffecterPDRs")
+                        {
+                            if (auto pdrVec = decode_numeric_effecter_pdr(
+                                    tid, pdrJson))
+                            {
+                                terminus->pdrs.emplace_back(
+                                    std::move(*pdrVec));
+                            }
+                        }
+                        else if (pdrName == "effecterAuxiliaryNamesPDR")
+                        {
+                            if (auto pdrVec =
+                                    decode_effecter_auxiliary_names_pdr(
+                                        tid, pdrJson))
+                            {
+                                terminus->pdrs.emplace_back(
+                                    std::move(*pdrVec));
                             }
                         }
                     }
