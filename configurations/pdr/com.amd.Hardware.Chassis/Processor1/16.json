@@ -1,0 +1,13 @@
+{
+    "entityAuxiliaryNamePDRs": [
+        {
+            "pdr_type": 16,
+            "entity_type": 135,
+            "entity_instance_number": 0,
+            "container_id": 0,
+            "shared_name_count": 0,
+            "name_string_count": 1,
+            "names": [["en", "Processor1"]]
+        }
+    ]
+}
