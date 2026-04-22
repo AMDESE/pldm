@@ -40,7 +40,8 @@ class SensorManager
 
     explicit SensorManager(sdeventplus::Event& event,
                            TerminusManager& terminusManager,
-                           TerminiMapper& termini, Manager* manager);
+                           TerminiMapper& termini, Manager* manager,
+                           const bool verbose);
 
     /** @brief starting sensor polling task
      */
@@ -124,6 +125,9 @@ class SensorManager
 
     /** @brief pointer to Manager */
     Manager* manager;
+
+    /** @brief Enable verbose logging for debug purposes */
+    bool verbose{false};
 };
 } // namespace platform_mc
 } // namespace pldm
