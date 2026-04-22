@@ -14,10 +14,11 @@ namespace platform_mc
 
 SensorManager::SensorManager(sdeventplus::Event& event,
                              TerminusManager& terminusManager,
-                             TerminiMapper& termini, Manager* manager) :
+                             TerminiMapper& termini, Manager* manager,
+                             const bool verbose) :
     event(event), terminusManager(terminusManager), termini(termini),
     pollingTime(SENSOR_POLLING_TIME), manager(manager)
-{}
+{this->verbose = verbose;}
 
 void SensorManager::startPolling(pldm_tid_t tid)
 {
@@ -270,9 +271,11 @@ exec::task<int> SensorManager::doSensorPollingTask(pldm_tid_t tid)
                 }
                 else
                 {
-                    lg2::error(
-                        "Failed to get sensor value for terminus {TID}, error: {RC}",
-                        "TID", tid, "RC", rc);
+                    if (verbose) {
+                       lg2::error(
+                           "Failed to get sensor value for terminus {TID}, error: {RC}",
+                           "TID", tid, "RC", rc);
+                    }
                 }
             }
 
@@ -351,9 +354,11 @@ exec::task<int> SensorManager::getSensorReading(
         reinterpret_cast<uint8_t*>(&presentReading));
     if (rc)
     {
-        lg2::error(
-            "Failed to decode response GetSensorReading for terminus ID {TID}, sensor Id {ID}, error {RC}.",
-            "TID", tid, "ID", sensorId, "RC", rc);
+        if (verbose) {
+           lg2::error(
+               "Failed to decode response GetSensorReading for terminus ID {TID}, sensor Id {ID}, error {RC}.",
+               "TID", tid, "ID", sensorId, "RC", rc);
+        }
         sensor->handleErrGetSensorReading();
         co_return rc;
     }
