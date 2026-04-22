@@ -40,7 +40,7 @@ class Manager : public pldm::MctpDiscoveryHandlerIntf
         terminusManager(event, handler, instanceIdDb, termini, this,
                         pldm::BmcMctpEid),
         platformManager(terminusManager, termini, this),
-        sensorManager(event, terminusManager, termini, this),
+        sensorManager(event, terminusManager, termini, this, verbose),
         eventManager(terminusManager, termini, verbose)
     {this->verbose = verbose;}
 
@@ -285,6 +285,7 @@ class Manager : public pldm::MctpDiscoveryHandlerIntf
     /** @brief map of PLDM event type to EventHandlers */
     PollHandlers pollHandlers;
 
+    /** @brief Enable verbose logging for debug purposes */
     bool verbose{false};
 };
 } // namespace platform_mc
