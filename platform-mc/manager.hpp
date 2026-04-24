@@ -38,11 +38,14 @@ class Manager : public pldm::MctpDiscoveryHandlerIntf
     explicit Manager(sdeventplus::Event& event, RequesterHandler& handler,
                      pldm::InstanceIdDb& instanceIdDb, const bool verbose) :
         terminusManager(event, handler, instanceIdDb, termini, this,
-                        pldm::BmcMctpEid),
+                        pldm::BmcMctpEid, nullptr),
         platformManager(terminusManager, termini, this),
         sensorManager(event, terminusManager, termini, this),
         eventManager(terminusManager, termini, verbose)
-    {this->verbose = verbose;}
+    {
+       this->verbose = verbose;
+       terminusManager.setSensorManager(&sensorManager);
+    }
 
     /** @brief Helper function to do the actions before discovering terminus
      *
@@ -106,7 +109,23 @@ class Manager : public pldm::MctpDiscoveryHandlerIntf
      */
     void startSensorPolling(pldm_tid_t tid)
     {
-        sensorManager.startPolling(tid);
+         if (termini.contains(tid))
+         {
+             for (auto& sensor : termini[tid]->numericSensors)
+             {
+                 if (sensor)
+                 {
+                    sensor->isReady = true;
+                 }
+             }
+         }
+
+         else
+         {
+             lg2::error("terminii does not contain TID: {TID}.", "TID", tid);
+         }
+
+         sensorManager.startPolling(tid);
     }
 
     /** @brief Helper function to set available state for pldm request (sensor

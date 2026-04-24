@@ -77,6 +77,13 @@ class SensorManager
         return availableState[tid];
     };
 
+    /** @brief Sending getSensorReading command for the sensor
+     *
+     *  @param[in] sensor - the sensor to be updated
+     *  @return coroutine return_value - PLDM completion code
+     */
+    exec::task<int> getSensorReading(std::shared_ptr<NumericSensor> sensor);
+
   protected:
     /** @brief start a coroutine for polling all sensors.
      */
@@ -88,13 +95,6 @@ class SensorManager
      *  @return coroutine return_value - PLDM completion code
      */
     exec::task<int> doSensorPollingTask(pldm_tid_t tid);
-
-    /** @brief Sending getSensorReading command for the sensor
-     *
-     *  @param[in] sensor - the sensor to be updated
-     *  @return coroutine return_value - PLDM completion code
-     */
-    exec::task<int> getSensorReading(std::shared_ptr<NumericSensor> sensor);
 
     /** @brief Reference to to PLDM daemon's main event loop.
      */

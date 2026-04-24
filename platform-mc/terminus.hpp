@@ -89,6 +89,8 @@ namespace pldm
 namespace platform_mc
 {
 
+class SensorManager; //forward declaration
+
 using ContainerID = uint16_t;
 using EntityInstanceNumber = uint16_t;
 using EntityName = std::string;
@@ -142,7 +144,8 @@ class Terminus
 {
   public:
     Terminus(pldm_tid_t tid, uint64_t supportedPLDMTypes,
-             sdeventplus::Event& event, TerminusManager& terminusManager);
+             sdeventplus::Event& event, TerminusManager& terminusManager,
+             SensorManager* sensorManager);
 
     /** @brief Check if the terminus supports the PLDM type message
      *
@@ -518,6 +521,9 @@ class Terminus
 
     /** @brief Reference to TerminusManager */
     TerminusManager& terminusManager;
+
+    /** @brief Reference to SensorManager */
+    SensorManager* sensorManager;
 
     /** @brief Numeric Sensor PDR list */
     std::vector<std::shared_ptr<pldm_numeric_sensor_value_pdr>>

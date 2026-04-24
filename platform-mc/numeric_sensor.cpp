@@ -2,6 +2,7 @@
 
 #include "common/utils.hpp"
 #include "requester/handler.hpp"
+#include "sensor_manager.hpp"
 
 #include <libpldm/platform.h>
 
@@ -14,6 +15,27 @@ namespace pldm
 {
 namespace platform_mc
 {
+
+double SensorValue::value() const
+{
+    if (this->nSensor.sensorManager && !nSensor.updateTime && nSensor.isReady && !nSensor.pollPending)
+    {
+        nSensor.pollPending = true;
+
+        lg2::info("Get reading for sensor Id: {ID}", "ID", nSensor.sensorId);
+        nSensor.scope.spawn(
+            [](SensorManager* manager, NumericSensor* sensor) -> exec::task<void> {
+                auto sPtr = std::shared_ptr<NumericSensor>(sensor, [](auto) {});
+                co_await manager->getSensorReading(sPtr);
+                sensor->pollPending = false;
+                co_return;
+            }(nSensor.sensorManager, const_cast<NumericSensor*>(&nSensor))
+        );
+    }
+
+    auto value = ValueIntf::value();
+    return value;
+}
 
 inline bool NumericSensor::createInventoryPath(
     const std::string& associationPath, const std::string& sensorName,
@@ -163,7 +185,9 @@ void NumericSensor::setSensorUnit(uint8_t baseUnit)
 NumericSensor::NumericSensor(
     const pldm_tid_t tid, const bool sensorDisabled,
     std::shared_ptr<pldm_numeric_sensor_value_pdr> pdr, std::string& sensorName,
-    std::string& associationPath) : tid(tid), sensorName(sensorName)
+    std::string& associationPath, SensorManager* sensorManager,
+    exec::async_scope& scoperef) :
+    tid(tid), sensorName(sensorName), sensorManager(sensorManager), scope(scoperef)
 {
     if (!pdr)
     {
@@ -289,7 +313,7 @@ NumericSensor::NumericSensor(
     {
         try
         {
-            valueIntf = std::make_unique<ValueIntf>(bus, path.c_str());
+            valueIntf = std::make_unique<SensorValue>(bus, path.c_str(), *this);
         }
         catch (const sdbusplus::exception_t& e)
         {
@@ -419,8 +443,9 @@ NumericSensor::NumericSensor(
 NumericSensor::NumericSensor(
     const pldm_tid_t tid, const bool sensorDisabled,
     std::shared_ptr<pldm_compact_numeric_sensor_pdr> pdr,
-    std::string& sensorName, std::string& associationPath) :
-    tid(tid), sensorName(sensorName)
+    std::string& sensorName, std::string& associationPath, SensorManager* sensorManager,
+    exec::async_scope& scoperef) :
+    tid(tid), sensorName(sensorName), sensorManager(sensorManager), scope(scoperef)
 {
     if (!pdr)
     {
@@ -532,7 +557,7 @@ NumericSensor::NumericSensor(
     {
         try
         {
-            valueIntf = std::make_unique<ValueIntf>(bus, path.c_str());
+            valueIntf = std::make_unique<SensorValue>(bus, path.c_str(), *this);
         }
         catch (const sdbusplus::exception_t& e)
         {
@@ -698,7 +723,7 @@ void NumericSensor::updateReading(bool available, bool functional, double value)
     double curValue = 0;
     if (!useMetricInterface)
     {
-        curValue = valueIntf->value();
+        curValue = valueIntf->ValueIntf::value();
     }
     else
     {
