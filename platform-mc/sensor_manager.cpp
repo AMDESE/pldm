@@ -408,6 +408,12 @@ exec::task<int> SensorManager::getSensorReading(
         case PLDM_SENSOR_DATA_SIZE_SINT32:
             value = static_cast<double>(presentReading.value_s32);
             break;
+        case PLDM_SENSOR_DATA_SIZE_UINT64:
+            value = static_cast<double>(presentReading.value_u64);
+            break;
+        case PLDM_SENSOR_DATA_SIZE_SINT64:
+            value = static_cast<double>(presentReading.value_s64);
+            break;
         default:
             value = std::numeric_limits<double>::quiet_NaN();
             break;
