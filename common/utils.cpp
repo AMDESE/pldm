@@ -617,10 +617,12 @@ int emitRDEDeviceDetectedSignal(
     return PLDM_SUCCESS;
 }
 
+#ifdef OEM_AMD
 void emitPldmMessagePollEventSignal(
     uint8_t formatVersion, uint8_t tid, const std::string& tName,
-    uint8_t eventClass, uint32_t dataTransferHandle, uint16_t eventId,
-    uint16_t eventDataSize, int fd) {
+    uint8_t eventClass, uint16_t eventId,
+    const std::vector<uint32_t>& dataTransferHandles,
+    const std::vector<uint32_t>& eventDataSizes, int fd) {
 
     try
     {
@@ -641,8 +643,8 @@ void emitPldmMessagePollEventSignal(
            formatVersion,
            eventClass,
            eventId,
-           dataTransferHandle,
-           eventDataSize,
+           dataTransferHandles,
+           eventDataSizes,
            sdbusplus::message::unix_fd(fd));
         msg.signal_send();
     }
@@ -655,15 +657,12 @@ void emitPldmMessagePollEventSignal(
 
     lg2::info("Emitting PLDM Message Poll Event signal: FormatVersion={FV}, TID={TID}, "
               "TerminusName={NAME}, EventClass={CLASS}, EventId={ID}, "
-              "DataTransferHandlee={DTH}, "
-              "Size={SIZE}, FD={FD}",
+              "FD={FD}",
               "FV", formatVersion,
               "TID", tid,
               "NAME", tName,
               "CLASS", lg2::hex, eventClass,
               "ID", lg2::hex, eventId,
-              "DTH", lg2::hex, dataTransferHandle,
-              "SIZE", lg2::hex, eventDataSize,
               "FD", fd);
 }
 
@@ -698,6 +697,7 @@ int create_mem_fd(const std::vector<uint8_t>& data)
 
     return fd;
 }
+#endif
 
 void recoverMctpEndpoint(const std::string& endpointObjPath)
 {

@@ -623,8 +623,8 @@ std::string EventManager::getTerminusName(pldm_tid_t tid) const
 }
 
 void EventManager::callPolledEventHandlers(pldm_tid_t tid, uint8_t eventClass,
-                                           uint8_t formatVersion, uint32_t dataTransferHandle,
-                                           uint16_t eventId, std::vector<uint8_t>& eventMessage)
+                                           uint16_t eventId,
+                                           std::vector<uint8_t>& eventMessage)
 {
     try
     {
@@ -638,18 +638,6 @@ void EventManager::callPolledEventHandlers(pldm_tid_t tid, uint8_t eventClass,
                 lg2::error(
                     "Failed to handle platform event msg for terminus {TID}, event {EVENTID} return {RET}",
                     "TID", tid, "EVENTID", eventId, "RET", rc);
-            } else {
-                lg2::info("Handle platform event msg for terminus {TID}, event {EVENTID}, size {EVSIZE}",
-                    "TID", tid, "EVENTID", lg2::hex, eventId, "EVSIZE", lg2::hex, eventMessage.size());
-
-                int fd = pldm::utils::create_mem_fd(eventMessage);
-                if (fd != -1) {
-                   std::string tName = getTerminusName(tid);
-                   pldm::utils::emitPldmMessagePollEventSignal(
-                       formatVersion, tid, tName, eventClass, dataTransferHandle,
-                       eventId, eventMessage.size(), fd);
-                   close(fd);
-                }
             }
         }
     }
@@ -660,6 +648,40 @@ void EventManager::callPolledEventHandlers(pldm_tid_t tid, uint8_t eventClass,
             "TID", tid, "EVENTID", eventId, "ERROR", e);
     }
 }
+
+#ifdef OEM_AMD
+void EventManager::handlePollEventData(pldm_tid_t tid, uint8_t formatVersion,
+                                       uint8_t eventClass, uint16_t eventId,
+                                       const std::vector<uint32_t>& dataTransferHandles,
+                                       const std::vector<uint32_t>& eventDataSizes,
+                                       std::vector<uint8_t>& eventMessage)
+{
+    int fd = pldm::utils::create_mem_fd(eventMessage);
+    if (fd == -1)
+    {
+        lg2::error("Failed to create memory file descriptor for TID {TID}", "TID", tid);
+        return;
+    }
+
+    try
+    {
+        std::string tName = getTerminusName(tid);
+
+        pldm::utils::emitPldmMessagePollEventSignal(
+            formatVersion, tid, tName, eventClass, eventId,
+            dataTransferHandles, eventDataSizes, fd);
+    }
+    catch (const std::exception& e)
+    {
+        lg2::error("Failed to process message poll event for terminus {TID}, event {EVENTID}, error: {ERROR}",
+                   "TID", tid,
+                   "EVENTID", lg2::hex, eventId,
+                   "ERROR", e.what());
+    }
+
+    close(fd);
+}
+#endif
 
 exec::task<int> EventManager::pollForPlatformEventTask(
     pldm_tid_t tid, uint32_t pollDataTransferHandle)
@@ -676,6 +698,18 @@ exec::task<int> EventManager::pollForPlatformEventTask(
     uint8_t polledEventClass = 0;
 
     std::vector<uint8_t> eventMessage{};
+
+#ifdef OEM_AMD
+    constexpr uint8_t dbgLogDump = 0x5C;
+    constexpr uint8_t pldmEvent = 0x4C;
+    constexpr uint8_t syncFlood = 0x01;
+    constexpr uint8_t coreShutDown = 0x41;
+
+    std::vector<uint8_t> completeEventMessage{};
+    std::vector<uint32_t> dataTransferHandles{}, eventDataSizes{};
+    uint32_t currentDataTransferHandle = pollDataTransferHandle;
+    std::deque<uint8_t> debugIds = {0, 1, 2, 3, 23, 24, 25, 33, 36, 37, 38, 40};
+#endif
 
     // Reset and mark terminus as available
     updateAvailableState(tid, true);
@@ -701,6 +735,42 @@ exec::task<int> EventManager::pollForPlatformEventTask(
             co_await stdexec::just_stopped();
         }
 
+#ifdef OEM_AMD
+        /*
+         * Before sending Ack, check whether there are any remaining debug ids
+         * for which data needs to be fetched in case event id has 0x4c as msb
+         * and either 0x1 or 0x41 as lsb.
+         */
+        if (transferOperationFlag == PLDM_ACKNOWLEDGEMENT_ONLY) {
+           uint32_t dataSize = eventMessage.size();
+           if (dataSize > 0)
+           {
+              dataTransferHandles.push_back(currentDataTransferHandle);
+              eventDataSizes.push_back(dataSize);
+              completeEventMessage.insert(completeEventMessage.end(),
+                                          eventMessage.begin(), eventMessage.end());
+           }
+           if ((polledEventId >> 8 == pldmEvent) &&
+              ((polledEventId & 0xFF) == syncFlood || (polledEventId & 0xFF) == coreShutDown) &&
+              !debugIds.empty())
+           {
+              uint8_t nextId = debugIds.front();
+              debugIds.pop_front();
+              dataTransferHandle = (dbgLogDump << 24) | (nextId << 16);
+
+              transferOperationFlag = PLDM_GET_FIRSTPART;
+              eventIdToAcknowledge = PLDM_PLATFORM_EVENT_ID_NONE;
+              currentDataTransferHandle = dataTransferHandle;
+              eventMessage.clear();
+           }
+           else { // No more remaining debug ids
+             eventId = polledEventId;
+             eventIdToAcknowledge = polledEventId;
+             dataTransferHandle = 0x0;
+             eventMessage = completeEventMessage;
+           }
+        }
+#endif
         rc = co_await pollForPlatformEventMessage(
             tid, formatVersion, transferOperationFlag, dataTransferHandle,
             eventIdToAcknowledge, completionCode, eventTid, eventId,
@@ -714,6 +784,23 @@ exec::task<int> EventManager::pollForPlatformEventTask(
             co_return rc;
         }
 
+#ifdef OEM_AMD
+        /*
+         * If a debug id has no data, BMC receives tid and event id as 0.
+         * The specification does not mandate either End or StartandEnd
+         * in the response in which case, pldmd code would not set
+         * dataTransferHandle as PLDM_ACKNOWLEDGEMENT_ONLY.
+         * So we need to force a check for data for remaining debug ids,
+         * if any.
+         */
+        if ((eventId == 0 && eventDataSize == 0) &&
+             transferOperationFlag != PLDM_ACKNOWLEDGEMENT_ONLY)
+        {
+           transferOperationFlag = PLDM_ACKNOWLEDGEMENT_ONLY;
+           eventId = polledEventId;
+           continue;
+        }
+#endif
         if (eventDataSize > 0)
         {
             eventMessage.insert(eventMessage.end(), eventData,
@@ -726,8 +813,14 @@ exec::task<int> EventManager::pollForPlatformEventTask(
             if (eventHandlers.contains(polledEventClass))
             {
                 callPolledEventHandlers(polledEventTid, polledEventClass,
-                                        formatVersion, pollDataTransferHandle,
                                         polledEventId, eventMessage);
+#ifdef OEM_AMD
+                handlePollEventData(polledEventTid, formatVersion,
+                                    polledEventClass, eventId,
+                                    dataTransferHandles, eventDataSizes,
+                                    eventMessage);
+#endif
+
             }
             eventMessage.clear();
 
