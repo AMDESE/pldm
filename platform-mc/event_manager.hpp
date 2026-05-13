@@ -217,16 +217,37 @@ class EventManager
      *
      *  @param[in] tid - terminus ID
      *  @param[out] eventClass - Event class
-     *  @param[in] formatVersion - The PLDM version/format of the event data
-     *  @param[in] dataTransferHandle - Handle identifying the specific data block
-     *                                  in the event transfer
      *  @param[out] eventId - Event ID
      *  @param[in] eventMessage - event data of response message
      *
      */
     void callPolledEventHandlers(pldm_tid_t tid, uint8_t eventClass,
-                                 uint8_t formatVersion, uint32_t dataTransferHandle,
-                                 uint16_t eventId, std::vector<uint8_t>& eventMessage);
+                                 uint16_t eventId,
+                                 std::vector<uint8_t>& eventMessage);
+
+#ifdef OEM_AMD
+    /** @brief Handles incoming PLDM Message Poll Event data chunks specific to AMD platforms.
+     *
+     *  This function aggregates and processes data transfer handles, event sizes,
+     *  and raw event payloads retrieved from a platform endpoint during message polling loops.
+     *
+     *  @param[in] tid - The Terminus ID of the source PLDM endpoint
+     *  @param[in] formatVersion - The PLDM event format version specification
+     *  @param[in] eventClass - The classification identifier of the incoming event
+     *  @param[in] eventId - Unique sequence identifier for the multi-part event message
+     *  @param[in] dataTransferHandles - Vector of tokens identifying individual data transfer blocks
+     *  @param[in] eventDataSizes - Vector containing the corresponding byte size of each data chunk
+     *  @param[in] eventMessage - Buffered reference to append or mutate the raw payload byte stream
+     *
+     *  @return None
+     */
+     void handlePollEventData(pldm_tid_t tid, uint8_t formatVersion,
+                              uint8_t eventClass, uint16_t eventId,
+                              const std::vector<uint32_t>& dataTransferHandles,
+                              const std::vector<uint32_t>& eventDataSizes,
+                              std::vector<uint8_t>& eventMessage);
+#endif
+
 
     /** @brief Get the terminus name for a given TID
      *
