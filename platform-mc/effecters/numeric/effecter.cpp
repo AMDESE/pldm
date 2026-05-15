@@ -432,6 +432,17 @@ exec::task<int> NumericEffecter::setNumericEffecterValue(double effecterValue)
         co_return completionCode;
     }
 
+#ifdef OEM_AMD
+    auto it = std::find_if(terminus.numericSensors.begin(), terminus.numericSensors.end(),
+                           [this](const auto& sensor) { return sensor->sensorId == this->effecterId; });
+
+    if (it != terminus.numericSensors.end())
+    {
+        lg2::info("Enable polling for sensor ID: {SID}", "SID", (*it)->sensorId);
+        (*it)->updateTime = static_cast<uint64_t>(DEFAULT_SENSOR_UPDATER_INTERVAL * 1000);
+    }
+#endif
+
     co_await getNumericEffecterValue();
 
     co_return completionCode;
