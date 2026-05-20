@@ -274,6 +274,14 @@
         },
         {
             "pdr_type": 13,
+            "effecter_id": 108,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "TriggerSwSmi"]
+            ]
+        },
+        {
+            "pdr_type": 13,
             "effecter_id": 112,
             "effecter_count": 1,
             "effecter_names": [
