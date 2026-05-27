@@ -8,6 +8,8 @@
 #include <sdbusplus/message.hpp>
 #include <xyz/openbmc_project/PLDM/Event/server.hpp>
 
+#include <algorithm>
+#include <fstream>
 #include <future>
 #include <iomanip>
 #include <iostream>
@@ -17,6 +19,32 @@ PHOSPHOR_LOG2_USING;
 
 namespace pldm::rde
 {
+
+#ifdef OEM_AMD
+static void persistOperationId(uint32_t operationID)
+{
+    uint32_t current = 0;
+    std::ifstream inFile(operationIdFile);
+    if (inFile.is_open())
+    {
+        inFile >> current;
+    }
+
+    const uint32_t toWrite = std::max(current, operationID);
+    std::ofstream outFile(operationIdFile);
+    if (!outFile.is_open())
+    {
+        error("RDE: Failed to persist operation ID to {FILE}", "FILE",
+              operationIdFile);
+        return;
+    }
+
+    outFile << toWrite;
+    debug("RDE: Persisted operation ID {OID} to {FILE}", "OID", toWrite, "FILE",
+          operationIdFile);
+}
+#endif
+
 Manager::Manager(sdbusplus::bus::bus& bus, sdeventplus::Event& event,
                  pldm::InstanceIdDb* instanceIdDb,
                  pldm::requester::Handler<pldm::requester::Request>* handler) :
@@ -135,6 +163,7 @@ void Manager::createDeviceDbusObject(
 
 #ifdef OEM_AMD
     devicePtr->setManager(this);
+    devicePtr->setCacheManager(cacheManagerObj_.get());
 #endif
 
     DeviceContext context;
@@ -187,6 +216,7 @@ void Manager::registerOperationTask(uint32_t operationID,
                                     std::shared_ptr<OperationTaskIface> task)
 {
     taskMap_[operationID] = task;
+    persistOperationId(operationID);
     info("RDE: Registered OperationTask with operationID={OID}", "OID",
          operationID);
 }
