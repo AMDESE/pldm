@@ -46,6 +46,7 @@ int emitTaskUpdatedSignal(sdbusplus::bus_t& bus, const std::string& path,
         std::map<std::string, std::variant<std::string, uint16_t>> changed;
         changed.emplace("payload", payload);
         changed.emplace("return_code", returnCode);
+        changed.emplace("CompletionCode", returnCode);
 
         msg.append(changed);
         msg.signal_send();

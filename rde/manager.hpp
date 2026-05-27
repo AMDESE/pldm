@@ -372,6 +372,9 @@ class Manager :
     pldm::requester::Handler<pldm::requester::Request>* handler_ = nullptr;
     sdbusplus::bus::bus& bus_;
     sdeventplus::Event& event_;
+#ifdef OEM_AMD
+    std::unique_ptr<CacheManagerObject> cacheManagerObj_;
+#endif
     std::unordered_map<eid, DeviceContext> eidMap_;
     std::unique_ptr<sdbusplus::bus::match_t> signalMatch_;
     std::unordered_map<eid, std::unique_ptr<sdbusplus::bus::match_t>>
@@ -381,9 +384,6 @@ class Manager :
                        std::shared_ptr<OperationTaskIface>>
         taskMap_;
     std::unique_ptr<sdbusplus::server::manager_t> objManager_;
-#ifdef OEM_AMD
-    std::unique_ptr<CacheManagerObject> cacheManagerObj_;
-#endif
 };
 
 } // namespace pldm::rde
