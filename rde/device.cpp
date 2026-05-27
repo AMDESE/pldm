@@ -1,7 +1,14 @@
 #include "device.hpp"
 
+#include <fstream>
+#include <regex>
+#include <sstream>
+#include <unordered_map>
+
 #ifdef OEM_AMD
+#include "cache_manager_dbus.hpp"
 #include "manager.hpp"
+#include "operation_task.hpp"
 #include "rde_cache_manager.hpp"
 #include "utils.hpp"
 
@@ -34,6 +41,13 @@ Device::~Device()
 {
     info("RDE : D-Bus Device object destroyed UUID:{UUID} EID:{EID}", "UUID",
          deviceUUID(), "EID", static_cast<int>(eid()));
+
+#ifdef OEM_AMD
+    biosGetTaskUpdatedMatch_.reset();
+    taskUpdatedMatch_.reset();
+    cacheManager_ = nullptr;
+    manager_ = nullptr;
+#endif
 }
 
 void Device::refreshDeviceInfo()
@@ -156,6 +170,70 @@ bool Device::shouldDeferOperation(const OperationInfo& oipInfo)
     return false;
 }
 
+bool Device::getAPCBTokenCache(
+    const OperationInfo& opInfo)
+{
+    if (opInfo.operationType != OperationType::READ ||
+        opInfo.targetURI != SocConfigurationTokenURI)
+    {
+        return false;
+    }
+
+    if (!cacheManager_)
+    {
+        error("RDE: cacheManager_ is null, cannot serve Token GET from APCB");
+        return false;
+    }
+
+    const APCBDataTableType table = cacheManager_->apcbDataTable();
+    auto entryIt = table.find(deviceUUID());
+    if (entryIt == table.end() || entryIt->second.empty())
+    {
+        info(
+            "RDE: No APCBDataTable entry for UUID={UUID}, cannot serve cached Token GET",
+            "UUID", deviceUUID());
+        return false;
+    }
+
+    const std::string payload =
+        CacheManagerObject::apcbEntryToJson(entryIt->second).dump();
+
+    std::weak_ptr<Device> weakSelf = weak_from_this();
+    const std::string taskPath = opInfo.opTaskPath;
+    const uint32_t operationID = opInfo.operationID;
+
+    deferredApcbTaskSignal_ = std::make_unique<sdeventplus::source::Defer>(
+        event_, [weakSelf, taskPath, operationID,
+                 payload](sdeventplus::source::EventBase&) mutable {
+            auto self = weakSelf.lock();
+            if (!self)
+            {
+                return;
+            }
+            self->deferredApcbTaskSignal_.reset();
+
+            const int signalRc = emitTaskUpdatedSignal(
+                self->bus_, taskPath, payload,
+                static_cast<uint16_t>(OpState::OperationCompleted));
+            if (signalRc != PLDM_SUCCESS)
+            {
+                error(
+                    "RDE: Failed to emit deferred cached Token GET TaskUpdated for OID={OID}",
+                    "OID", operationID);
+                return;
+            }
+
+            info(
+                "RDE: Served SocConfiguration Token GET from APCBDataTable (deferred), UUID={UUID}, OID={OID}",
+                "UUID", self->deviceUUID(), "OID", operationID);
+        });
+
+    info(
+        "RDE: Scheduling APCBDataTable Token GET response for UUID={UUID}, OID={OID}",
+        "UUID", deviceUUID(), "OID", opInfo.operationID);
+    return true;
+}
+
 bool Device::isReplayOperation(const OperationInfo& opInfo) const
 {
     return (currentReplayOperationId_ != 0 &&
@@ -170,6 +248,12 @@ bool Device::canCacheOperation(const OperationInfo& opInfo) const
         info(
             "RDE Cache: Device UUID={UUID} not found in rde_device_metadata.json, skipping cache",
             "UUID", opInfo.deviceUUID);
+        return false;
+    }
+
+    if (opInfo.operationType == OperationType::READ &&
+        opInfo.targetURI == SocConfigurationTokenURI)
+    {
         return false;
     }
 
@@ -230,7 +314,7 @@ void Device::replayCachedOperations()
                     "xyz.openbmc_project.RDE.OperationTask"),
             [weakSelf](sdbusplus::message::message& msg) {
                 auto self = weakSelf.lock();
-                if (!self)
+                if (!self || self->shuttingDown_)
                 {
                     return;
                 }
@@ -329,7 +413,7 @@ void Device::processNextCachedOperation()
         currentReplayOperationId_ = 0;
         currentReplayTimestamp_ = 0;
         isReplayInProgress_ = false;
-        sendBiosZeroLengthCommand();
+        sendBiosGetCommand();
         return;
     }
 
@@ -391,6 +475,338 @@ void Device::stopReplay()
     currentReplayOperationId_ = 0;
     currentReplayTimestamp_ = 0;
     isReplayInProgress_ = false;
+}
+
+inline bool writeJsonToFile(const nlohmann::json& jsonData,
+                            const std::string& filePath)
+{
+    try
+    {
+        std::ofstream outFile(filePath);
+        if (!outFile.is_open())
+        {
+            error("RDE: Failed to open file {FILE}", "FILE", filePath);
+            return false;
+        }
+
+        outFile << jsonData.dump(4) << std::endl;
+        outFile.close();
+
+        info("RDE: Successfully wrote JSON to file {FILE}", "FILE", filePath);
+        return true;
+    }
+    catch (const std::exception& e)
+    {
+        error("RDE: Exception while writing JSON to file {FILE}: {ERR}",
+              "FILE", filePath, "ERR", e.what());
+        return false;
+    }
+}
+
+inline nlohmann::json handleDeferredBindings(const std::string& bejJsonInput,
+                                             const nlohmann::json& uriMapJson)
+{
+    std::unordered_map<int, std::string> uriMap;
+    for (const auto& [key, value] : uriMapJson.items())
+    {
+        try
+        {
+            int resourceId = std::stoi(key);
+            uriMap[resourceId] = value.get<std::string>();
+        }
+        catch (const std::exception& e)
+        {
+            error(
+                "RDE: Invalid resource ID in uriMapJson: Key={KEY} error={ERR}",
+                "KEY", key, "ERR", e.what());
+        }
+    }
+
+    std::string bejJson = bejJsonInput;
+    std::regex bareObjectRegex("\\{\\s*\"%L(\\d+)\"\\s*\\}");
+    std::ostringstream oss1;
+    std::sregex_iterator begin1(bejJson.begin(), bejJson.end(),
+                                bareObjectRegex);
+    std::sregex_iterator end1;
+    size_t lastPos1 = 0;
+
+    for (auto it = begin1; it != end1; ++it)
+    {
+        oss1 << bejJson.substr(
+            lastPos1,
+            static_cast<size_t>(static_cast<std::ptrdiff_t>(it->position()) -
+                                static_cast<std::ptrdiff_t>(lastPos1)));
+
+        int id = std::stoi((*it)[1]);
+        auto uriIt = uriMap.find(id);
+        if (uriIt != uriMap.end())
+        {
+            oss1 << R"({"@odata.id":")" << uriIt->second << R"("})";
+        }
+        else
+        {
+            oss1 << it->str();
+        }
+        lastPos1 = static_cast<size_t>(it->position() + it->length());
+    }
+    oss1 << bejJson.substr(lastPos1);
+    bejJson = oss1.str();
+
+    std::regex lPattern(R"(%L(\d+))");
+    std::ostringstream oss2;
+    std::sregex_iterator begin2(bejJson.begin(), bejJson.end(), lPattern);
+    std::sregex_iterator end2;
+    size_t lastPos2 = 0;
+
+    for (auto it = begin2; it != end2; ++it)
+    {
+        oss2 << bejJson.substr(
+            lastPos2,
+            static_cast<size_t>(static_cast<std::ptrdiff_t>(it->position()) -
+                                static_cast<std::ptrdiff_t>(lastPos2)));
+
+        int id = std::stoi((*it)[1]);
+        auto uriIt = uriMap.find(id);
+        if (uriIt != uriMap.end())
+        {
+            oss2 << uriIt->second;
+        }
+        else
+        {
+            oss2 << it->str();
+        }
+        lastPos2 = static_cast<size_t>(it->position() + it->length());
+    }
+    oss2 << bejJson.substr(lastPos2);
+    bejJson = oss2.str();
+
+    bejJson = std::regex_replace(bejJson, std::regex(R"(%I(\d+))"), "$1");
+
+    nlohmann::json jsonPayload;
+    if (!bejJson.empty())
+    {
+        jsonPayload = nlohmann::json::parse(bejJson);
+    }
+    return jsonPayload;
+}
+
+void Device::handleBiosGetTaskSignal(
+    sdbusplus::message::message& msg,
+    uint32_t operationID,
+    std::shared_ptr<std::string> payloadBuffer)
+{
+    if (shuttingDown_)
+    {
+        return;
+    }
+
+    std::map<std::string, std::variant<std::string, uint16_t>> changed;
+
+    try
+    {
+        msg.read(changed);
+    }
+    catch (const std::exception& e)
+    {
+        error("RDE BIOS GET: Failed to read signal: {MSG}", "MSG",
+              e.what());
+        return;
+    }
+
+    std::optional<uint16_t> completionCode;
+
+    if (auto it = changed.find("CompletionCode"); it != changed.end())
+    {
+        if (auto val = std::get_if<uint16_t>(&it->second))
+        {
+            completionCode = *val;
+        }
+    }
+    if (!completionCode)
+    {
+        if (auto it = changed.find("return_code"); it != changed.end())
+        {
+            if (auto val = std::get_if<uint16_t>(&it->second))
+            {
+                completionCode = *val;
+            }
+        }
+    }
+
+    if (auto it = changed.find("payload"); it != changed.end())
+    {
+        if (auto val = std::get_if<std::string>(&it->second))
+        {
+            *payloadBuffer = *val;
+
+            info("RDE BIOS GET: Payload update len={LEN} OID={OID}",
+                 "LEN", payloadBuffer->size(), "OID", operationID);
+        }
+    }
+
+    if (!completionCode)
+    {
+        return;
+    }
+
+    if (*completionCode == 7)
+    {
+        info("RDE BIOS GET: Completed OID={OID}", "OID", operationID);
+
+        if (payloadBuffer->empty())
+        {
+            error("RDE BIOS GET: Completed but payload empty OID={OID}",
+                  "OID", operationID);
+        }
+        else
+        {
+            try
+            {
+                nlohmann::json uriMapJson = nlohmann::json::object();
+
+                if (!resourceRegistry_)
+                {
+                    error("RDE BIOS GET: resourceRegistry_ is null");
+                }
+                else
+                {
+                    const auto& resourceMap =
+                        resourceRegistry_->getResourceMap();
+
+                    for (const auto& [resourceId, info] : resourceMap)
+                    {
+                       uriMapJson[resourceId] = info.uri;
+                    }
+                }
+
+                auto parsedPayload =
+                    handleDeferredBindings(*payloadBuffer, uriMapJson);
+
+                if (!cacheManager_)
+                {
+                    error(
+                        "RDE BIOS GET: cacheManager_ is null, cannot update APCBDataTable");
+                }
+                else
+                {
+                    cacheManager_->updateAPCBDataTable(deviceUUID(),
+                                                       parsedPayload);
+                    info("RDE BIOS GET: APCBDataTable updated for UUID={UUID}",
+                         "UUID", deviceUUID());
+                }
+            }
+            catch (const std::exception& e)
+            {
+                error("RDE BIOS GET: Payload processing failed: {MSG}",
+                      "MSG", e.what());
+            }
+        }
+
+        biosGetTaskUpdatedMatch_.reset();
+
+        sendBiosZeroLengthCommand();
+
+        return;
+    }
+
+    info("RDE BIOS GET: Interim update OID={OID}, code={CODE}",
+         "OID", operationID, "CODE", *completionCode);
+}
+
+void Device::sendBiosGetCommand()
+{
+    std::string processorURI = loadProcessorURI(deviceUUID());
+    auto payloadBuffer = std::make_shared<std::string>();
+
+    if (processorURI.empty())
+    {
+        info(
+            "RDE Cache Replay: Device UUID={UUID} not found in rde_device_metadata.json, skipping BIOS zero length command",
+            "UUID", deviceUUID());
+        return;
+    }
+
+    if (!manager_)
+    {
+        error(
+            "RDE Cache Replay: Manager not set, cannot send BIOS get command for UUID={UUID}",
+            "UUID", deviceUUID());
+        return;
+    }
+
+    try
+    {
+        uint32_t operationID = manager_->getNextAvailableOperationId();
+        if (operationID == 0)
+        {
+            error(
+                "RDE Cache Replay: Failed to generate operation ID for BIOS get command, UUID={UUID}",
+                "UUID", deviceUUID());
+            return;
+        }
+
+        OperationType operationType = OperationType::READ;
+        std::string subURI = SocConfigurationTokenURI;
+        std::string payload = "";
+        PayloadFormatType payloadFormat = PayloadFormatType::Inline;
+        EncodingFormatType encodingType = EncodingFormatType::JSON;
+        std::string sessionID = manager_->getJSONSchema();
+        if (sessionID.empty())
+        {
+            error(
+                "RDE Cache Replay: Cannot find session ID for BIOS zero length command, UUID={UUID}",
+                "UUID", deviceUUID());
+            return;
+        }
+
+        std::string taskPathStr = "/xyz/openbmc_project/RDE/OperationTask/" +
+                                  std::to_string(operationID);
+
+        OperationInfo opInfo{operationID,   operationType, subURI,
+                             deviceUUID(),  eid(),         payload,
+                             payloadFormat, encodingType,  sessionID,
+                             taskPathStr};
+
+        auto task = std::make_shared<OperationTask>(bus_, opInfo.opTaskPath);
+        manager_->registerOperationTask(operationID, task);
+
+
+        std::weak_ptr<Device> weakSelf = shared_from_this();
+
+        biosGetTaskUpdatedMatch_ = std::make_unique<sdbusplus::bus::match_t>(
+                bus_, rdeOpTaskMatch(taskPathStr),
+                [weakSelf, operationID, payloadBuffer](sdbusplus::message::message& msg) {
+            auto self = weakSelf.lock();
+            if (!self)
+            {
+                return;
+            }
+
+            self->handleBiosGetTaskSignal(msg, operationID, payloadBuffer);
+        });
+
+        std::shared_ptr<Device> self = shared_from_this();
+        opSession_ = std::make_unique<OperationSession>(self, opInfo);
+        if (!opSession_)
+        {
+            error(
+                "RDE Cache Replay: Failed to create OperationSession for BIOS GET command, UUID={UUID}",
+                "UUID", deviceUUID());
+
+            return;
+        }
+
+        info(
+            "RDE Cache Replay: Sending BIOS GET command for UUID={UUID}, OperationID={OID}",
+            "UUID", deviceUUID(), "OID", operationID);
+        opSession_->doOperationInit();
+    }
+    catch (const std::exception& e)
+    {
+        error(
+            "RDE Cache Replay: Failed to send BIOS GET command for UUID={UUID}: {MSG}",
+           "UUID", deviceUUID(), "MSG", e.what());
+    }
 }
 
 void Device::sendBiosZeroLengthCommand()
@@ -476,6 +892,11 @@ void Device::sendBiosZeroLengthCommand()
 void Device::setManager(Manager* manager)
 {
     manager_ = manager;
+}
+
+void Device::setCacheManager(CacheManagerObject* manager)
+{
+    cacheManager_ = manager;
 }
 #endif
 
@@ -590,6 +1011,14 @@ void Device::updateState(DeviceState newState)
 void Device::shutdown()
 {
     shuttingDown_ = true;
+
+#ifdef OEM_AMD
+    biosGetTaskUpdatedMatch_.reset();
+    taskUpdatedMatch_.reset();
+    stopReplay();
+    cacheManager_ = nullptr;
+    manager_ = nullptr;
+#endif
 
     if (opSession_)
         opSession_.reset();

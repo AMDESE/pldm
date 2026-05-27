@@ -397,14 +397,19 @@ void OperationSession::doOperationInit()
     {
         error("Failed to send request OperationInit EID '{EID}', RC '{RC}'",
               "EID", eid_, "RC", rc);
-        updateState(OpState::OperationFailed);
-        dev->getInstanceIdDb().free(eid_, instanceId);
 #ifdef OEM_AMD
+        if (dev->getAPCBTokenCache(oipInfo))
+        {
+            dev->getInstanceIdDb().free(eid_, instanceId);
+            return;
+        }
         if (!dev->isReplayOperation(oipInfo) && dev->canCacheOperation(oipInfo))
         {
             dev->cacheOperation(oipInfo, "failed (init request)");
         }
 #endif
+        updateState(OpState::OperationFailed);
+        dev->getInstanceIdDb().free(eid_, instanceId);
         throw std::runtime_error("Failed to send request OperationInit");
     }
 
@@ -436,6 +441,10 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
         error("Null PLDM response received from endpoint ID {EID}", "EID",
               eid_);
 #ifdef OEM_AMD
+        if (dev->getAPCBTokenCache(oipInfo))
+        {
+            return;
+        }
         if (!dev->isReplayOperation(oipInfo) && dev->canCacheOperation(oipInfo))
         {
             dev->cacheOperation(oipInfo, "failed (NULL PLDM response)");

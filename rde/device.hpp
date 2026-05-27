@@ -12,6 +12,7 @@
 #ifdef OEM_AMD
 #include "operation_task.hpp"
 #include "rde_cache_manager.hpp"
+#include "cache_manager_dbus.hpp"
 #endif
 
 #include <libpldm/base.h>
@@ -31,6 +32,8 @@
 #include <tuple>
 #include <variant>
 #include <vector>
+#include <sdbusplus/bus/match.hpp>
+#include <sdbusplus/message.hpp>
 
 namespace pldm::rde
 {
@@ -42,6 +45,22 @@ using SchemaResourcesType = std::map<std::string, PropertyMap>;
 using EntryIfaces = sdbusplus::server::object_t<
     sdbusplus::xyz::openbmc_project::RDE::server::Device,
     sdbusplus::xyz::openbmc_project::Common::server::UUID>;
+
+#ifdef OEM_AMD
+inline constexpr const char* rdePldmService = "xyz.openbmc_project.PLDM";
+inline constexpr const char* rdeOperationTaskInterface =
+    "xyz.openbmc_project.RDE.OperationTask";
+inline constexpr const char* rdeTaskUpdatedMember = "TaskUpdated";
+
+/** @brief D-Bus match rule for OperationTask TaskUpdated on @p objPath. */
+inline std::string rdeOpTaskMatch(const std::string& objPath)
+{
+    return "type='signal',sender='" + std::string(rdePldmService) +
+           "',interface='" + std::string(rdeOperationTaskInterface) +
+           "',member='" + std::string(rdeTaskUpdatedMember) + "',path='" + objPath +
+           "'";
+}
+#endif
 
 /**
  * @class Device
@@ -153,6 +172,7 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
      */
     void setManager(Manager* manager);
 
+    void setCacheManager(CacheManagerObject* manager);
     /**
      * @brief Stop cache replay and reset all replay state
      *
@@ -170,6 +190,15 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
      * Only sends if the device UUID is found in rde_device_metadata.json.
      */
     void sendBiosZeroLengthCommand();
+
+    void sendBiosGetCommand();
+
+    /**
+     * @brief Complete Token READ from APCBDataTable via TaskUpdated (no host PLDM).
+     * @return true if cached APCB data was emitted for this operation.
+     */
+    bool getAPCBTokenCache(const OperationInfo& opInfo);
+
 #endif
 
     /**
@@ -333,6 +362,11 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
     std::unique_ptr<DiscoverySession> discovSession_;
     std::unique_ptr<OperationSession> opSession_;
 #ifdef OEM_AMD
+    std::unique_ptr<sdbusplus::bus::match_t> biosGetTaskUpdatedMatch_;
+
+    void handleBiosGetTaskSignal(sdbusplus::message::message& msg,
+                                 uint32_t operationID,
+                                 std::shared_ptr<std::string> payloadBuffer);
     // Current operation ID being replayed
     uint32_t currentReplayOperationId_ = 0;
     // Current operation timestamp being replayed (used as key for completion)
@@ -341,8 +375,12 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
     bool isReplayInProgress_ = false;
     // Manager reference for shared operation ID generation
     Manager* manager_ = nullptr;
+
+    CacheManagerObject* cacheManager_ = nullptr;
     // Signal match for TaskUpdated to track operation completion
     std::unique_ptr<sdbusplus::bus::match_t> taskUpdatedMatch_;
+    // Defer APCB TaskUpdated until after StartRedfishOperation returns to bmcweb
+    std::unique_ptr<sdeventplus::source::Defer> deferredApcbTaskSignal_;
 #endif
     bool shuttingDown_;
 };
