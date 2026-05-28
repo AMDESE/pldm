@@ -218,6 +218,18 @@
         },
         {
             "pdr_type": 21,
+            "sensor_id": 29,
+            "entity_type": 135,
+            "entity_instance_number": 0,
+            "container_id": 0,
+            "sensor_name": "FuseSamplingInit",
+            "base_unit": 0,
+            "unit_modifier": 0,
+            "occurrence_rate": 0,
+            "range_field_support": 0
+        },
+        {
+            "pdr_type": 21,
             "sensor_id": 30,
             "entity_type": 135,
             "entity_instance_number": 0,
