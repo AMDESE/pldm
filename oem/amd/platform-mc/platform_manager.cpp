@@ -17,6 +17,11 @@ namespace pldm
 namespace platform_mc
 {
 
+#ifdef OEM_AMD
+    static std::unordered_set<uint16_t> excludeNumericEffecterPDRs;
+    static std::unordered_set<uint16_t> excludeCompactNumericSensorPDRs;
+#endif
+
 std::vector<uint16_t> convertToUtf16BE(const std::string& text)
 {
     std::vector<uint16_t> utf16Data;
@@ -123,6 +128,17 @@ std::optional<std::vector<uint8_t>> decode_numeric_effecter_pdr(
 
         pdr->terminus_handle = tid;
         pdr->effecter_id = j.at("effecter_id").get<uint16_t>();
+
+#ifdef OEM_AMD
+       if (excludeNumericEffecterPDRs.find(pdr->effecter_id) !=
+           excludeNumericEffecterPDRs.end())
+       {
+           lg2::error("Excluding Numeric Effecter with ID {EID} for TID {TID}",
+                      "EID", +pdr->effecter_id, "TID", tid);
+           return std::nullopt;
+       }
+#endif
+
         pdr->entity_type = j.at("entity_type").get<uint16_t>();
         pdr->entity_instance = j.at("entity_instance_number").get<uint16_t>();
         pdr->container_id = j.at("container_id").get<uint16_t>();
@@ -264,7 +280,19 @@ std::optional<std::vector<uint8_t>> decode_compact_numeric_sensor_pdr(
 
         pdr->hdr.type = j.at("pdr_type").get<uint16_t>();
         pdr->terminus_handle = tid;
+
         pdr->sensor_id = j.at("sensor_id").get<uint16_t>();
+
+#ifdef OEM_AMD
+       if (excludeCompactNumericSensorPDRs.find(pdr->sensor_id) !=
+           excludeCompactNumericSensorPDRs.end())
+       {
+           lg2::error("Excluding Compact Numeric Sensor {NAME} with ID {SID} for TID {TID}",
+                      "NAME", name, "SID", +pdr->sensor_id, "TID", tid);
+           return std::nullopt;
+       }
+#endif
+
         pdr->entity_type = j.at("entity_type").get<uint16_t>();
         pdr->entity_instance = j.at("entity_instance_number").get<uint16_t>();
         pdr->container_id = j.at("container_id").get<uint16_t>();
@@ -309,7 +337,7 @@ exec::task<int> PlatformManager::get_pdr_from_json(
     try
     {
         // 1. Open the mapping file
-        std::string uuidPath = pdrDir + "/uuids.json";
+        std::string uuidPath = pdrDir + "/pdr_config.json";
         std::ifstream uuidFile(uuidPath);
 
         if (!uuidFile.is_open())
@@ -319,7 +347,7 @@ exec::task<int> PlatformManager::get_pdr_from_json(
 
         // 2. Parse directly into a map
         auto j = nlohmann::json::parse(uuidFile);
-        auto uuid_map = j.get<std::unordered_map<std::string, int>>();
+        auto uuid_map = j["uuids"].get<std::unordered_map<std::string, int>>();
 
         // Early exit if the UUID is not in the map
         auto it = uuid_map.find(targetUuid);
@@ -328,6 +356,27 @@ exec::task<int> PlatformManager::get_pdr_from_json(
             // UUID not found in the mapping
             co_return PLDM_ERROR_INVALID_DATA;
         }
+
+#ifdef OEM_AMD
+        excludeNumericEffecterPDRs.clear();
+        excludeCompactNumericSensorPDRs.clear();
+
+        if (j.contains("excludeNumericEffecterPDRs"))
+        {
+           for (const auto& val : j["excludeNumericEffecterPDRs"])
+           {
+               excludeNumericEffecterPDRs.emplace(val.get<uint16_t>());
+           }
+        }
+
+        if (j.contains("excludeCompactNumericSensorPDRs"))
+        {
+           for (const auto& val : j["excludeCompactNumericSensorPDRs"])
+           {
+               excludeCompactNumericSensorPDRs.emplace(val.get<uint16_t>());
+           }
+        }
+#endif
 
         int processorIndex = it->second;
         std::string procName = "Processor" + std::to_string(processorIndex);
