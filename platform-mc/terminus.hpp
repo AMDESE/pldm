@@ -264,6 +264,11 @@ class Terminus
      */
     uint32_t pollDataTransferHandle;
 
+    /** @brief The Event Class from the notification payload, used for
+     *         OEM AMD-specific parsing or routing of the polled event data.
+     */
+    uint8_t pollEventClass;
+
     /** @brief Get Sensor Auxiliary Names by sensorID
      *
      *  @param[in] id - sensor ID
