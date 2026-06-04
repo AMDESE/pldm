@@ -191,6 +191,7 @@ int EventManager::handlePlatformEvent(
             terminus->pollEvent = true;
             terminus->pollEventId = poll_event.event_id;
             terminus->pollDataTransferHandle = poll_event.data_transfer_handle;
+            terminus->pollEventClass = eventClass;
         }
 
         return PLDM_SUCCESS;
@@ -639,6 +640,27 @@ exec::task<int> EventManager::pollForPlatformEventTask(
     std::vector<uint32_t> dataTransferHandles{}, eventDataSizes{};
     uint32_t currentDataTransferHandle = pollDataTransferHandle;
     std::deque<uint8_t> debugIds = {0, 1, 2, 3, 23, 24, 25, 33, 36, 37, 38, 40};
+
+    if (!pollDataTransferHandle)
+    {
+       auto it = termini.find(tid);
+       if (it != termini.end())
+       {
+           auto& terminus = it->second;
+           handlePollEventData(tid, formatVersion,
+                               terminus->pollEventClass, terminus->pollEventId,
+                               dataTransferHandles, eventDataSizes,
+                               completeEventMessage);
+       }
+       else
+       {
+           lg2::error("Unable to notify poll event: no terminus found for TID={TID}",
+                      "TID", tid);
+       }
+
+       co_return PLDM_SUCCESS;
+    }
+
 #endif
 
     // Reset and mark terminus as available
