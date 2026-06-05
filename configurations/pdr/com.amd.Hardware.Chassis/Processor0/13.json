@@ -386,6 +386,14 @@
         },
         {
             "pdr_type": 13,
+            "effecter_id": 127,
+            "effecter_count": 1,
+            "effecter_names": [
+                ["en", "SocDimmPowerLimit"]
+            ]
+        },
+        {
+            "pdr_type": 13,
             "effecter_id": 256,
             "effecter_count": 1,
             "effecter_names": [
