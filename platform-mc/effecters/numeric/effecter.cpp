@@ -305,9 +305,7 @@ void NumericEffecter::updateValue(pldm_effecter_oper_state effecterOperState,
         }
         try
         {
-            intf->handleValueChange(*this, effecterOperState,
-                                    rawToBase(pendingValue),
-                                    rawToBase(presentValue), sizeEnum);
+            intf->handleValueChange(*this, effecterOperState, pendingValue, presentValue, sizeEnum);
         }
         catch (const std::exception& e)
         {
