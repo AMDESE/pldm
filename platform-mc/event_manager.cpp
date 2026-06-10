@@ -838,7 +838,7 @@ exec::task<int> EventManager::pollForPlatformEventTask(
                                         polledEventId, eventMessage);
 #ifdef OEM_AMD
                 handlePollEventData(polledEventTid, formatVersion,
-                                    polledEventClass, eventId,
+                                    polledEventClass, polledEventId,
                                     dataTransferHandles, eventDataSizes,
                                     eventMessage);
 #endif
