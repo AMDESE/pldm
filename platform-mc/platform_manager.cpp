@@ -77,7 +77,8 @@ exec::task<int> PlatformManager::initTerminus()
             auto mctpInfo = terminusManager.getMctpInfoForTid(tid);
             if (mctpInfo.has_value()) {
                std::string uuid = std::get<1>(*mctpInfo);
-               auto rc = co_await get_pdr_from_json(terminus, uuid);
+               std::string networkInterface = std::get<2>(*mctpInfo);
+               auto rc = co_await get_pdr_from_json(terminus, uuid, networkInterface);
                if (rc)
                {
                    lg2::error(
@@ -140,7 +141,7 @@ exec::task<int> PlatformManager::initTerminus()
             if (info)
             {
                 pldm::utils::emitRDEDeviceDetectedSignal(
-                    tid, info->first, info->second, redfishResources);
+                    tid, std::get<0>(*info), std::get<1>(*info), redfishResources);
             }
             else
             {
@@ -541,6 +542,7 @@ exec::task<int> PlatformManager::setEventReceiver(
     pldm_tid_t tid, pldm_event_message_global_enable eventMessageGlobalEnable,
     pldm_transport_protocol_type protocolType, uint16_t heartbeatTimer)
 {
+    uint8_t localEid = 0;
     size_t requestBytes = PLDM_SET_EVENT_RECEIVER_REQ_BYTES;
     /**
      * Ignore heartbeatTimer bytes when eventMessageGlobalEnable is not
@@ -553,9 +555,21 @@ exec::task<int> PlatformManager::setEventReceiver(
     }
     Request request(sizeof(pldm_msg_hdr) + requestBytes);
     auto requestMsg = new (request.data()) pldm_msg;
+
+    auto info = terminusManager.getMctpInfoForTid(tid);
+    if (info)
+    {
+        localEid = std::get<3>(*info);
+    }
+    else
+    {
+        lg2::error("Failed to find Mctp Info for terminus with TID: {TID}", "TID", tid);
+    }
+    lg2::info("Set event receiver: LocalEid {LID} for tid: {TID}", "LID", localEid, "TID", tid);
+
     auto rc = encode_set_event_receiver_req(
         0, eventMessageGlobalEnable, protocolType,
-        terminusManager.getLocalEid(), heartbeatTimer, requestMsg);
+        localEid, heartbeatTimer, requestMsg);
     if (rc)
     {
         lg2::error(
