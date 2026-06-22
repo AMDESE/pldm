@@ -71,18 +71,26 @@ void MctpDiscovery::getMctpInfos(std::map<MctpInfo, Availability>& mctpInfoMap)
         for (const auto& serviceIter : services)
         {
             const std::string& service = serviceIter.first;
-            const MctpEndpointProps& epProps =
+            const MctpEndpointProps epProps =
                 getMctpEndpointProps(service, path);
             const UUID& uuid = getEndpointUUIDProp(service, path);
             const Availability& availability =
                 getEndpointConnectivityProp(path);
             auto types = std::get<MCTPMsgTypes>(epProps);
+
+            const auto& networkInterface = std::get<3>(epProps);
+            const std::string localEidPath =
+                std::string(LocalEidInterfacePath) + networkInterface;
+            const LocalEid localEid = getInterfaceLocalEidProp(service, localEidPath);
+
             if (std::find(types.begin(), types.end(), mctpTypePLDM) !=
                 types.end())
             {
                 auto mctpInfo =
-                    MctpInfo(std::get<eid>(epProps), uuid, "",
-                             std::get<NetworkId>(epProps), std::nullopt);
+                    MctpInfo(std::get<1>(epProps), uuid, "",
+                             std::get<0>(epProps), std::nullopt,
+                             std::get<3>(epProps),
+                             localEid);
                 searchConfigurationFor(pldm::utils::DBusHandler(), mctpInfo);
                 mctpInfoMap[std::move(mctpInfo)] = availability;
             }
@@ -101,7 +109,8 @@ MctpEndpointProps MctpDiscovery::getMctpEndpointProps(
         if (properties.contains(MCTPEndpoint::property_names::network_id) &&
             properties.contains(MCTPEndpoint::property_names::eid) &&
             properties.contains(
-                MCTPEndpoint::property_names::supported_message_types))
+                MCTPEndpoint::property_names::supported_message_types) &&
+            properties.contains("NetworkInterface"))
         {
             auto networkId = std::get<NetworkId>(
                 properties.at(MCTPEndpoint::property_names::network_id));
@@ -109,7 +118,9 @@ MctpEndpointProps MctpDiscovery::getMctpEndpointProps(
                 properties.at(MCTPEndpoint::property_names::eid));
             auto types = std::get<std::vector<uint8_t>>(properties.at(
                 MCTPEndpoint::property_names::supported_message_types));
-            return MctpEndpointProps(networkId, eid, types);
+            auto networkInterface = std::get<NetworkInterface>(
+                properties.at("NetworkInterface"));
+            return MctpEndpointProps(networkId, eid, types, networkInterface);
         }
     }
     catch (const sdbusplus::exception_t& e)
@@ -117,10 +128,10 @@ MctpEndpointProps MctpDiscovery::getMctpEndpointProps(
         error(
             "Error reading MCTP Endpoint property at path '{PATH}' and service '{SERVICE}', error - {ERROR}",
             "SERVICE", service, "PATH", path, "ERROR", e);
-        return MctpEndpointProps(0, MCTP_ADDR_ANY, {});
+        return MctpEndpointProps(0, MCTP_ADDR_ANY, {}, "");
     }
 
-    return MctpEndpointProps(0, MCTP_ADDR_ANY, {});
+    return MctpEndpointProps(0, MCTP_ADDR_ANY, {}, "");
 }
 
 UUID MctpDiscovery::getEndpointUUIDProp(const std::string& service,
@@ -170,6 +181,30 @@ Availability MctpDiscovery::getEndpointConnectivityProp(const std::string& path)
     return available;
 }
 
+LocalEid MctpDiscovery::getInterfaceLocalEidProp(const std::string& service,
+                                        const std::string& path)
+{
+    try
+    {
+        auto properties = pldm::utils::DBusHandler().getDbusPropertiesVariant(
+            service.c_str(), path.c_str(), LocalEidInterface);
+
+        if (properties.contains("LocalEid"))
+        {
+            return std::get<LocalEid>(properties.at("LocalEid"));
+        }
+    }
+    catch (const sdbusplus::exception_t& e)
+    {
+        error(
+            "Error reading Interface LocalEid property at path '{PATH}' and service '{SERVICE}', error - {ERROR}",
+            "SERVICE", service, "PATH", path, "ERROR", e);
+        return static_cast<LocalEid>(0);
+    }
+
+    return static_cast<LocalEid>(0);
+}
+
 void MctpDiscovery::getAddedMctpInfos(sdbusplus::message_t& msg,
                                       MctpInfos& mctpInfos)
 {
@@ -213,7 +248,8 @@ void MctpDiscovery::getAddedMctpInfos(sdbusplus::message_t& msg,
             if (properties.contains(MCTPEndpoint::property_names::network_id) &&
                 properties.contains(MCTPEndpoint::property_names::eid) &&
                 properties.contains(
-                    MCTPEndpoint::property_names::supported_message_types))
+                    MCTPEndpoint::property_names::supported_message_types) &&
+                properties.contains("NetworkInterface"))
             {
                 auto networkId = std::get<NetworkId>(
                     properties.at(MCTPEndpoint::property_names::network_id));
@@ -221,6 +257,13 @@ void MctpDiscovery::getAddedMctpInfos(sdbusplus::message_t& msg,
                     properties.at(MCTPEndpoint::property_names::eid));
                 auto types = std::get<std::vector<uint8_t>>(properties.at(
                     MCTPEndpoint::property_names::supported_message_types));
+                auto networkInterface = std::get<NetworkInterface>(
+                    properties.at("NetworkInterface"));
+
+                const std::string localEidPath =
+                    std::string(LocalEidInterfacePath) + networkInterface;
+                const LocalEid localEid = getInterfaceLocalEidProp(
+                    MCTPService, localEidPath);
 
                 if (!availability)
                 {
@@ -234,10 +277,12 @@ void MctpDiscovery::getAddedMctpInfos(sdbusplus::message_t& msg,
                     types.end())
                 {
                     info(
-                        "Adding Endpoint networkId '{NETWORK}' and EID '{EID}' UUID '{UUID}'",
-                        "NETWORK", networkId, "EID", eid, "UUID", uuid);
+                        "Adding Endpoint networkId '{NETWORK}' and EID '{EID}' "
+                        "UUID '{UUID}' Interface '{NINTF}' LocalEid '{LID}'",
+                        "NETWORK", networkId, "EID", eid,
+                        "UUID", uuid, "NINTF", networkInterface, "LID", localEid);
                     auto mctpInfo =
-                        MctpInfo(eid, uuid, "", networkId, std::nullopt);
+                        MctpInfo(eid, uuid, "", networkId, std::nullopt, networkInterface, localEid);
                     searchConfigurationFor(pldm::utils::DBusHandler(),
                                            mctpInfo);
                     mctpInfos.emplace_back(std::move(mctpInfo));
@@ -327,15 +372,22 @@ void MctpDiscovery::propertiesChangedCb(sdbusplus::message_t& msg)
             const MctpEndpointProps& epProps =
                 getMctpEndpointProps(service, objPath);
 
-            auto types = std::get<MCTPMsgTypes>(epProps);
+            auto types = std::get<2>(epProps);
             if (!std::ranges::contains(types, mctpTypePLDM))
             {
                 return;
             }
             const UUID& uuid = getEndpointUUIDProp(service, objPath);
 
-            MctpInfo mctpInfo(std::get<eid>(epProps), uuid, "",
-                              std::get<NetworkId>(epProps), std::nullopt);
+            const auto& networkInterface = std::get<3>(epProps);
+            const std::string localEidPath =
+                std::string(LocalEidInterfacePath) + networkInterface;
+            const LocalEid localEid = getInterfaceLocalEidProp(service, localEidPath);
+
+            MctpInfo mctpInfo(std::get<1>(epProps), uuid, "",
+                              std::get<0>(epProps), std::nullopt,
+                              std::get<3>(epProps),
+                              localEid);
             searchConfigurationFor(pldm::utils::DBusHandler(), mctpInfo);
             if (!std::ranges::contains(existingMctpInfos, mctpInfo))
             {
@@ -432,8 +484,8 @@ std::string MctpDiscovery::getNameFromProperties(
 std::string MctpDiscovery::constructMctpReactorObjectPath(
     const MctpInfo& mctpInfo)
 {
-    const auto networkId = std::get<NetworkId>(mctpInfo);
-    const auto eid = std::get<pldm::eid>(mctpInfo);
+    const auto networkId = std::get<3>(mctpInfo);
+    const auto eid = std::get<0>(mctpInfo);
     return std::string{MCTPPath} + "/networks/" + std::to_string(networkId) +
            "/endpoints/" + std::to_string(eid) + "/configured_by";
 }

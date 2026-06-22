@@ -32,20 +32,25 @@ using MctpMedium = std::string;
  *         uint32_t is used as defined in MCTP Endpoint D-Bus Interface
  */
 using NetworkId = uint32_t;
+using NetworkInterface = std::string;
+using LocalEid = uint8_t;
 
 /** @brief Type definition of MCTP name in string
  */
 using MctpInfoName = std::optional<std::string>;
 
 /** @brief Type definition of MCTP interface information between two endpoints.
- *         eid : Endpoint EID in byte. Defined to match with MCTP D-Bus
- *               interface
- *         UUID : Endpoint UUID which is used to different the endpoints
- *         MctpMedium: Endpoint MCTP Medium info (Resersed)
- *         NetworkId: MCTP network index
- *         name: Alias name of the endpoint, e.g. BMC, NIC, etc.
+ *
+ *         eid              : Endpoint EID (byte). Matches MCTP D-Bus endpoint EID.
+ *         UUID             : Endpoint UUID used to uniquely identify endpoints.
+ *         MctpMedium       : Endpoint MCTP medium information (reserved/transport-specific).
+ *         NetworkId        : MCTP network index identifying the MCTP network.
+ *         MctpInfoName     : Alias name of the endpoint (e.g. BMC, NIC, etc.).
+ *         NetworkInterface : Underlying transport interface used for MCTP communication
+ *                            (e.g. mctpi3c4, mctppcie0).
+ *         LocalEid         : Host-assigned identifier associated with the interface.
  */
-using MctpInfo = std::tuple<eid, UUID, MctpMedium, NetworkId, MctpInfoName>;
+using MctpInfo = std::tuple<eid, UUID, MctpMedium, NetworkId, MctpInfoName, NetworkInterface, LocalEid>;
 
 /** @brief Type definition of MCTP endpoint D-Bus properties in
  *         xyz.openbmc_project.MCTP.Endpoint D-Bus interface.
@@ -55,7 +60,7 @@ using MctpInfo = std::tuple<eid, UUID, MctpMedium, NetworkId, MctpInfoName>;
  *               interface
  *         MCTPMsgTypes: MCTP message types
  */
-using MctpEndpointProps = std::tuple<NetworkId, eid, MCTPMsgTypes>;
+using MctpEndpointProps = std::tuple<NetworkId, eid, MCTPMsgTypes, NetworkInterface>;
 
 /** @brief Type defined for list of MCTP interface information
  */

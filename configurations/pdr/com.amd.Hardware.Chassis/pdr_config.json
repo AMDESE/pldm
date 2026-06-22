@@ -1,7 +1,13 @@
 {
   "uuids": {
-    "28318908-bc42-4463-a8f8-f0cc7b43c5e6": 0,
-    "8bc76e13-94c1-4e52-992b-d4d845e3572a": 1
+    "28318908-bc42-4463-a8f8-f0cc7b43c5e6": {
+      "mctpi3c4": 0,
+      "mctpi3c5": 1
+    },
+    "8bc76e13-94c1-4e52-992b-d4d845e3572a": {
+      "mctpi3c4": 0,
+      "mctpi3c5": 1
+    }
   },
 
   "excludeNumericEffecterPDRs": [

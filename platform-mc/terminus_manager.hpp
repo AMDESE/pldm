@@ -143,20 +143,6 @@ class TerminusManager
      */
     bool unmapTid(const pldm_tid_t& tid);
 
-    /** @brief getter of local EID
-     *
-     *  @return uint8_t - local EID
-     */
-    mctp_eid_t getLocalEid() const
-    {
-        auto hostEid = getBmcMctpEid();
-
-        if (hostEid.has_value())
-            return *hostEid;
-
-        return localEid;
-    }
-
     /** @brief Helper function to invoke registered handlers for
      *  updating the availability status of the MCTP endpoint
      *
@@ -190,21 +176,11 @@ class TerminusManager
      * PLDM Terminus ID (TID) from the internal mctpInfoTable.
      *
      * @param tid[in] The PLDM Terminus ID to look up.
-     * @return std::optional<std::pair<eid, UUID>> Returns a pair of EID and
-     * UUID if the TID is found, or std::nullopt if not found.
+     * @return optional tuple of EID, UUID, NetworkInterface, and LocalEid
+     * if the TID is found, or std::nullopt if not found.
      */
-    std::optional<std::pair<eid, UUID>> getMctpInfoForTid(pldm_tid_t tid);
-
-    /**
-     * @brief Get the BMC Host EID stored in a file
-     *
-     * This function looks up the a file and if the file exists and
-     * can be read, reads the MCTP EID stored in that file.
-     *
-     * @return std::optional<std::<uint8_t> Returns a BMC MCTP EID
-     * stored in the file and in case of any errors, return NULL value.
-     */
-    std::optional<uint8_t> getBmcMctpEid();
+    std::optional<std::tuple<eid, UUID, NetworkInterface, LocalEid>> getMctpInfoForTid(
+        pldm_tid_t tid);
 
   private:
     /** @brief Find the terminus object pointer in termini list.
