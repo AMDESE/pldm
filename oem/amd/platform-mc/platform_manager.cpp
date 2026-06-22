@@ -324,7 +324,8 @@ std::optional<std::vector<uint8_t>> decode_compact_numeric_sensor_pdr(
 
 /* Setting default values when getPDRRepositoryInfo fails or does not support */
 exec::task<int> PlatformManager::get_pdr_from_json(
-    std::shared_ptr<Terminus> terminus, std::string targetUuid)
+    std::shared_ptr<Terminus> terminus, std::string targetUuid,
+    std::string networkInterface)
 {
     pldm_tid_t tid = terminus->getTid();
 
@@ -345,15 +346,24 @@ exec::task<int> PlatformManager::get_pdr_from_json(
             throw std::runtime_error("Could not open UUID mapping file");
         }
 
-        // 2. Parse directly into a map
-        auto j = nlohmann::json::parse(uuidFile);
-        auto uuid_map = j["uuids"].get<std::unordered_map<std::string, int>>();
+        using InterfaceMap = std::unordered_map<std::string, int>;
+        using UuidMap = std::unordered_map<std::string, InterfaceMap>;
 
-        // Early exit if the UUID is not in the map
-        auto it = uuid_map.find(targetUuid);
-        if (it == uuid_map.end())
+        // Parse JSON
+        auto j = nlohmann::json::parse(uuidFile);
+        auto uuidMap = j["uuids"].get<UuidMap>();
+
+        // Find UUID
+        auto uuidIt = uuidMap.find(targetUuid);
+        if (uuidIt == uuidMap.end())
         {
-            // UUID not found in the mapping
+            co_return PLDM_ERROR_INVALID_DATA;
+        }
+
+        // Find interface
+        auto ifaceIt = uuidIt->second.find(networkInterface);
+        if (ifaceIt == uuidIt->second.end())
+        {
             co_return PLDM_ERROR_INVALID_DATA;
         }
 
@@ -378,7 +388,7 @@ exec::task<int> PlatformManager::get_pdr_from_json(
         }
 #endif
 
-        int processorIndex = it->second;
+        int processorIndex = ifaceIt->second;
         std::string procName = "Processor" + std::to_string(processorIndex);
         std::string procPdrDir = pdrDir + "/" + procName;
         lg2::info("Loading PDRs for TID {TID} from {PATH}", "TID", tid, "PATH", procPdrDir);

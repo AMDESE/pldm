@@ -20,6 +20,8 @@ const std::string emptyUUID = "00000000-0000-0000-0000-000000000000";
 constexpr const char* MCTPService = "au.com.codeconstruct.MCTP1";
 constexpr const char* MCTPInterface = "xyz.openbmc_project.MCTP.Endpoint";
 constexpr const char* EndpointUUID = "xyz.openbmc_project.Common.UUID";
+constexpr const char* LocalEidInterface = "au.com.codeconstruct.MCTP.Interface1";
+constexpr const char* LocalEidInterfacePath = "/au/com/codeconstruct/mctp1/interfaces/";
 constexpr const char* MCTPPath = "/au/com/codeconstruct/mctp1";
 constexpr const char* MCTPInterfaceCC = "au.com.codeconstruct.MCTP.Endpoint1";
 constexpr const char* MCTPConnectivityProp = "Connectivity";
@@ -190,6 +192,11 @@ class MctpDiscovery
      */
     UUID getEndpointUUIDProp(const std::string& service,
                              const std::string& path);
+
+
+    LocalEid getInterfaceLocalEidProp(const std::string& service,
+                                      const std::string& path);
+
 
     /** @brief Get Endpoint Availability status from `Connectivity` D-Bus
      *         property in the `au.com.codeconstruct.MCTP.Endpoint1` D-Bus
