@@ -238,41 +238,7 @@ std::string ResourceRegistry::constructFullUriRecursive(
     if (!parentUri.empty() && parentUri.back() != '/')
         parentUri += "/";
 
-    // TODO: Workaround for RDE PDRs that redundantly encode segments like
-    // "0/0/Settings" If parent URI ends with the same segment as the beginning
-    // of `part`, skip duplication
-    std::vector<std::string> parentSegments;
-    std::stringstream ss(parentUri);
-    std::string segment;
-    while (std::getline(ss, segment, '/'))
-    {
-        if (!segment.empty())
-            parentSegments.push_back(segment);
-    }
-
-    std::vector<std::string> partSegments;
-    std::stringstream ps(part);
-    while (std::getline(ps, segment, '/'))
-    {
-        if (!segment.empty())
-            partSegments.push_back(segment);
-    }
-
-    if (!parentSegments.empty() && !partSegments.empty() &&
-        parentSegments.back() == partSegments.front())
-    {
-        // Skip the first segment of `part` to avoid duplication
-        partSegments.erase(partSegments.begin());
-    }
-
-    for (const auto& seg : partSegments)
-    {
-        parentUri += seg + "/";
-    }
-
-    // Remove trailing slash if added
-    if (!parentUri.empty() && parentUri.back() == '/')
-        parentUri.pop_back();
+    parentUri += part;
 
     return parentUri;
 }
