@@ -312,15 +312,6 @@ std::vector<ResourceInfo> ResourceRegistry::parseRedfishResourcePDRs(
         subUriMap[rid] = fullUri;
         parentMap[rid] = parent;
 
-        for (size_t i = 0; i < pdr->add_resrc_id_count; ++i)
-        {
-            add_resrc_t* add = pdr->additional_resrc[i];
-            uint16_t addId = static_cast<uint16_t>(add->resrc_id);
-            std::string addUri = getRdeResourceName(add->name, add->length);
-            subUriMap[addId] = addUri;
-            parentMap[addId] = parent;
-        }
-
         ResourceInfo info;
         info.resourceId = std::to_string(rid);
         info.schemaName = getRdeResourceName(pdr->major_schema.name,
@@ -329,6 +320,17 @@ std::vector<ResourceInfo> ResourceRegistry::parseRedfishResourcePDRs(
         info.schemaClass = PLDM_RDE_SCHEMA_MAJOR;
         info.propContainResourceName = proposedRoot;
         resInfoMap[rid] = info;
+
+        for (size_t i = 0; i < pdr->add_resrc_id_count; ++i)
+        {
+            add_resrc_t* add = pdr->additional_resrc[i];
+            uint16_t addId = static_cast<uint16_t>(add->resrc_id);
+            std::string addUri = getRdeResourceName(add->name, add->length);
+            subUriMap[addId] = addUri;
+            parentMap[addId] = parent;
+            info.resourceId = std::to_string(addId);
+            resInfoMap[addId] = info;
+        }
     }
 
     for (const auto& [rid, _] : subUriMap)
