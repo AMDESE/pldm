@@ -318,7 +318,7 @@ std::vector<ResourceInfo> ResourceRegistry::parseRedfishResourcePDRs(
             uint16_t addId = static_cast<uint16_t>(add->resrc_id);
             std::string addUri = getRdeResourceName(add->name, add->length);
             subUriMap[addId] = addUri;
-            parentMap[addId] = rid;
+            parentMap[addId] = parent;
         }
 
         ResourceInfo info;
