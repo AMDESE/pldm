@@ -238,41 +238,7 @@ std::string ResourceRegistry::constructFullUriRecursive(
     if (!parentUri.empty() && parentUri.back() != '/')
         parentUri += "/";
 
-    // TODO: Workaround for RDE PDRs that redundantly encode segments like
-    // "0/0/Settings" If parent URI ends with the same segment as the beginning
-    // of `part`, skip duplication
-    std::vector<std::string> parentSegments;
-    std::stringstream ss(parentUri);
-    std::string segment;
-    while (std::getline(ss, segment, '/'))
-    {
-        if (!segment.empty())
-            parentSegments.push_back(segment);
-    }
-
-    std::vector<std::string> partSegments;
-    std::stringstream ps(part);
-    while (std::getline(ps, segment, '/'))
-    {
-        if (!segment.empty())
-            partSegments.push_back(segment);
-    }
-
-    if (!parentSegments.empty() && !partSegments.empty() &&
-        parentSegments.back() == partSegments.front())
-    {
-        // Skip the first segment of `part` to avoid duplication
-        partSegments.erase(partSegments.begin());
-    }
-
-    for (const auto& seg : partSegments)
-    {
-        parentUri += seg + "/";
-    }
-
-    // Remove trailing slash if added
-    if (!parentUri.empty() && parentUri.back() == '/')
-        parentUri.pop_back();
+    parentUri += part;
 
     return parentUri;
 }
@@ -312,15 +278,6 @@ std::vector<ResourceInfo> ResourceRegistry::parseRedfishResourcePDRs(
         subUriMap[rid] = fullUri;
         parentMap[rid] = parent;
 
-        for (size_t i = 0; i < pdr->add_resrc_id_count; ++i)
-        {
-            add_resrc_t* add = pdr->additional_resrc[i];
-            uint16_t addId = static_cast<uint16_t>(add->resrc_id);
-            std::string addUri = getRdeResourceName(add->name, add->length);
-            subUriMap[addId] = addUri;
-            parentMap[addId] = rid;
-        }
-
         ResourceInfo info;
         info.resourceId = std::to_string(rid);
         info.schemaName = getRdeResourceName(pdr->major_schema.name,
@@ -329,6 +286,17 @@ std::vector<ResourceInfo> ResourceRegistry::parseRedfishResourcePDRs(
         info.schemaClass = PLDM_RDE_SCHEMA_MAJOR;
         info.propContainResourceName = proposedRoot;
         resInfoMap[rid] = info;
+
+        for (size_t i = 0; i < pdr->add_resrc_id_count; ++i)
+        {
+            add_resrc_t* add = pdr->additional_resrc[i];
+            uint16_t addId = static_cast<uint16_t>(add->resrc_id);
+            std::string addUri = getRdeResourceName(add->name, add->length);
+            subUriMap[addId] = addUri;
+            parentMap[addId] = parent;
+            info.resourceId = std::to_string(addId);
+            resInfoMap[addId] = info;
+        }
     }
 
     for (const auto& [rid, _] : subUriMap)
