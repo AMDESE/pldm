@@ -181,6 +181,21 @@ int EventManager::handlePlatformEvent(
                logPldmErrorEvent(tid, eventId, eventClass, eventData, eventDataSize);
 
             auto& terminus = it->second; // Reference for clarity
+
+#ifdef OEM_AMD
+            if (!poll_event.data_transfer_handle) {
+                // Wrap the single uint32_t values into std::vector containers
+                uint8_t formatVersion = poll_event.format_version;
+                std::vector<uint32_t> handle = { poll_event.data_transfer_handle };
+                std::vector<uint32_t> sizes = { 0 };
+                std::vector<uint8_t> eventMsg = {}; // Empty vector for the last argument
+
+                handlePollEventData(tid, formatVersion, eventClass, poll_event.event_id,
+                                    handle, sizes, eventMsg);
+
+                return PLDM_SUCCESS;
+            }
+#endif
             terminus->pollEvent = true;
             terminus->pollEventId = poll_event.event_id;
             terminus->pollDataTransferHandle = poll_event.data_transfer_handle;
