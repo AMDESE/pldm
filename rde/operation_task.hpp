@@ -5,6 +5,7 @@
 
 namespace pldm::rde
 {
+class Manager;
 using OperationTaskIface =
     sdbusplus::xyz::openbmc_project::RDE::server::OperationTask;
 
@@ -64,9 +65,11 @@ class OperationTask : public OperationTaskIface
  * @param path D-Bus object path for this task instance
  * @param payload JSON string describing task changes
  * @param returnCode Numeric status representing outcome
+ * @param manager Optional RDE manager used to destroy the task on terminal states
  * @return TASK_SUCCESS if signal is sent successfully, else TASK_ERROR
  */
 int emitTaskUpdatedSignal(sdbusplus::bus_t& bus, const std::string& path,
-                          const std::string& payload, uint16_t returnCode);
+                          const std::string& payload, uint16_t returnCode,
+                          Manager* manager = nullptr);
 
 } // namespace pldm::rde
