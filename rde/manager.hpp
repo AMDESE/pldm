@@ -15,6 +15,8 @@
 #include <requester/handler.hpp>
 #include <sdbusplus/bus.hpp>
 #include <sdbusplus/server/object.hpp>
+#include <sdeventplus/event.hpp>
+#include <sdeventplus/source/event.hpp>
 
 #include <future>
 #include <memory>
@@ -202,6 +204,18 @@ class Manager :
                                std::shared_ptr<OperationTaskIface> task);
 
     /**
+     * @brief Remove a completed OperationTask from the registry and D-Bus.
+     * @param[in] operationID - Operation ID whose task should be destroyed.
+     */
+    void unregisterOperationTask(uint32_t operationID);
+
+    /**
+     * @brief Defer unregister so TaskUpdated subscribers finish first.
+     * @param[in] operationID - Operation ID to remove on the next event loop tick.
+     */
+    void scheduleUnregisterOperationTask(uint32_t operationID);
+
+    /**
      * @brief Get the next available operation ID.
      * @return uint32_t - The next available operation ID, or 0 if none
      * available.
@@ -383,6 +397,9 @@ class Manager :
     std::unordered_map<uint32_t, // OperationID
                        std::shared_ptr<OperationTaskIface>>
         taskMap_;
+    std::unordered_map<uint32_t,
+                       std::unique_ptr<sdeventplus::source::Defer>>
+        taskUnregisterDefers_;
     std::unique_ptr<sdbusplus::server::manager_t> objManager_;
 };
 

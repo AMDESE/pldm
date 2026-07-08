@@ -505,7 +505,8 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
 #endif
         updateState(OpState::OperationFailed);
         emitTaskUpdatedSignal(dev->getBus(), oipInfo.opTaskPath, "{}",
-                              static_cast<uint16_t>(OpState::OperationFailed));
+                              static_cast<uint16_t>(OpState::OperationFailed),
+                              dev->getManager());
         return;
     }
 
@@ -522,7 +523,8 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
             info("Response{STR}", "STR", decoded.c_str());
             emitTaskUpdatedSignal(
                 dev->getBus(), oipInfo.opTaskPath, decoded.c_str(),
-                static_cast<uint16_t>(OpState::OperationCompleted));
+                static_cast<uint16_t>(OpState::OperationCompleted),
+                dev->getManager());
             doOperationComplete();
         }
         else if (resultTransferHandle != 0)
@@ -551,7 +553,8 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
                                 dev->getBus(), oipInfo.opTaskPath,
                                 decoded.c_str(),
                                 static_cast<uint16_t>(
-                                    OpState::OperationCompleted));
+                                    OpState::OperationCompleted),
+                                dev->getManager());
                             doOperationComplete();
                         }
                         else
@@ -608,7 +611,8 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
                             emitTaskUpdatedSignal(
                                 dev->getBus(), oipInfo.opTaskPath, "",
                                 static_cast<uint16_t>(
-                                    OpState::OperationCompleted));
+                                    OpState::OperationCompleted),
+                                dev->getManager());
                             doOperationComplete();
                         }
                         else
@@ -638,7 +642,8 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
         }
         emitTaskUpdatedSignal(
             dev->getBus(), oipInfo.opTaskPath, "",
-            static_cast<uint16_t>(OpState::OperationCompleted));
+            static_cast<uint16_t>(OpState::OperationCompleted),
+            dev->getManager());
         doOperationComplete();
     }
 

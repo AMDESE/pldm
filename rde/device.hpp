@@ -107,6 +107,10 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
 
     void performRDEOperation(const OperationInfo& opInfo);
 
+    void setManager(Manager* manager);
+
+    Manager* getManager() const;
+
 #ifdef OEM_AMD
     /**
      * @brief Check if the operation should be deferred (cached) instead of
@@ -161,16 +165,6 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
      * completed one.
      */
     void processNextCachedOperation();
-
-    /**
-     * @brief Set the Manager reference for operation ID generation
-     *
-     * This method sets the Manager reference so that Device can use
-     * the shared operation ID generator with conflict detection.
-     *
-     * @param[in] manager Pointer to the Manager instance
-     */
-    void setManager(Manager* manager);
 
     void setCacheManager(CacheManagerObject* manager);
     /**
@@ -361,6 +355,7 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
     std::unique_ptr<pldm::rde::DictionaryManager> dictionaryManager_;
     std::unique_ptr<DiscoverySession> discovSession_;
     std::unique_ptr<OperationSession> opSession_;
+    Manager* manager_ = nullptr;
 #ifdef OEM_AMD
     std::unique_ptr<sdbusplus::bus::match_t> biosGetTaskUpdatedMatch_;
 
@@ -373,9 +368,6 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
     uint64_t currentReplayTimestamp_ = 0;
     // Flag to track if cache replay is in progress
     bool isReplayInProgress_ = false;
-    // Manager reference for shared operation ID generation
-    Manager* manager_ = nullptr;
-
     CacheManagerObject* cacheManager_ = nullptr;
     // Signal match for TaskUpdated to track operation completion
     std::unique_ptr<sdbusplus::bus::match_t> taskUpdatedMatch_;

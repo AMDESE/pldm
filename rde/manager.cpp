@@ -162,9 +162,9 @@ void Manager::createDeviceDbusObject(
                                  devEID, tid, devUUID, pdrPayloads);
 
 #ifdef OEM_AMD
-    devicePtr->setManager(this);
     devicePtr->setCacheManager(cacheManagerObj_.get());
 #endif
+    devicePtr->setManager(this);
 
     DeviceContext context;
     context.uuid = devUUID;
@@ -181,9 +181,10 @@ void Manager::createDeviceDbusObject(
 
     devicePtr->refreshDeviceInfo();
 }
-#ifdef OEM_AMD
+
 uint32_t Manager::getNextAvailableOperationId()
 {
+#ifdef OEM_AMD
     uint32_t operationId = 1;
     const uint32_t startId = operationId;
 
@@ -210,17 +211,52 @@ uint32_t Manager::getNextAvailableOperationId()
         "OID", operationId, "COUNT", taskMap_.size());
 
     return operationId;
+#else
+    return 0;
+#endif
 }
 
 void Manager::registerOperationTask(uint32_t operationID,
                                     std::shared_ptr<OperationTaskIface> task)
 {
     taskMap_[operationID] = task;
+#ifdef OEM_AMD
     persistOperationId(operationID);
+#endif
     info("RDE: Registered OperationTask with operationID={OID}", "OID",
          operationID);
 }
-#endif
+
+void Manager::unregisterOperationTask(uint32_t operationID)
+{
+    taskUnregisterDefers_.erase(operationID);
+    const auto erased = taskMap_.erase(operationID);
+    if (erased != 0)
+    {
+        info("RDE: Unregistered OperationTask with operationID={OID}", "OID",
+             operationID);
+    }
+}
+
+void Manager::scheduleUnregisterOperationTask(uint32_t operationID)
+{
+    if (taskMap_.find(operationID) == taskMap_.end())
+    {
+        return;
+    }
+
+    if (taskUnregisterDefers_.find(operationID) != taskUnregisterDefers_.end())
+    {
+        return;
+    }
+
+    taskUnregisterDefers_.emplace(
+        operationID,
+        std::make_unique<sdeventplus::source::Defer>(
+            event_, [this, operationID](sdeventplus::source::EventBase&) {
+                unregisterOperationTask(operationID);
+            }));
+}
 
 DeviceContext* Manager::getDeviceContext(eid devEID)
 {
@@ -262,9 +298,7 @@ ObjectPath Manager::startRedfishOperation(
 
     // Create and register D-Bus OperationTask object
     auto task = std::make_shared<OperationTask>(bus_, taskPathStr);
-    // task->emitInterfaceAdded();
-
-    taskMap_[operationID] = task;
+    registerOperationTask(operationID, task);
 
     // Construct minimal OperationInfo
     OperationInfo opInitInfo{
