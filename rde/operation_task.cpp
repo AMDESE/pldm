@@ -1,3 +1,8 @@
+#include "operation_task.hpp"
+
+#include "device_common.hpp"
+#include "manager.hpp"
+
 #include <libpldm/base.h>
 
 #include <phosphor-logging/lg2.hpp>
@@ -5,7 +10,9 @@
 
 #include <iostream>
 #include <map>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 
 PHOSPHOR_LOG2_USING;
@@ -13,36 +20,64 @@ PHOSPHOR_LOG2_USING;
 namespace pldm::rde
 {
 
-/**
- * @brief Emit the 'TaskUpdated' D-Bus signal.
- *
- * Signal:
- *   - Interface: xyz.openbmc_project.RDE.OperationTask
- *   - Name: TaskUpdated
- *   - Argument: changed (dict[string, variant])
- *       - "payload": string (JSON-formatted)
- *       - "return_code": uint16
- *
- * This function emits a signal when a task's properties change,
- * allowing observers to track lifecycle updates.
- *
- * @param bus sdbusplus bus reference
- * @param path D-Bus object path for this task instance
- * @param payload JSON string describing task changes
- * @param returnCode Numeric status representing outcome
- * @return TASK_SUCCESS if signal is sent successfully, else TASK_ERROR
- */
-int emitTaskUpdatedSignal(sdbusplus::bus_t& bus, const std::string& path,
-                          const std::string& payload, uint16_t returnCode)
+namespace
 {
+bool isTerminalTaskReturnCode(uint16_t returnCode)
+{
+    return returnCode ==
+               static_cast<uint16_t>(OpState::OperationCompleted) ||
+           returnCode == static_cast<uint16_t>(OpState::OperationFailed) ||
+           returnCode == static_cast<uint16_t>(OpState::Cancelled) ||
+           returnCode == static_cast<uint16_t>(OpState::TimedOut);
+}
+
+std::optional<uint32_t> operationIdFromTaskPath(const std::string& path)
+{
+    static constexpr std::string_view prefix =
+        "/xyz/openbmc_project/RDE/OperationTask/";
+    if (path.compare(0, prefix.size(), prefix) != 0)
+    {
+        return std::nullopt;
+    }
+
     try
     {
-        // Create D-Bus signal message
+        const unsigned long id = std::stoul(path.substr(prefix.size()));
+        return static_cast<uint32_t>(id);
+    }
+    catch (const std::exception&)
+    {
+        return std::nullopt;
+    }
+}
+
+void scheduleTaskCleanup(Manager* manager, const std::string& path,
+                         uint16_t returnCode)
+{
+    if (manager == nullptr || !isTerminalTaskReturnCode(returnCode))
+    {
+        return;
+    }
+
+    if (const auto operationId = operationIdFromTaskPath(path))
+    {
+        manager->scheduleUnregisterOperationTask(*operationId);
+    }
+}
+} // namespace
+
+int emitTaskUpdatedSignal(sdbusplus::bus_t& bus, const std::string& path,
+                          const std::string& payload, uint16_t returnCode,
+                          Manager* manager)
+{
+    int rc = PLDM_SUCCESS;
+
+    try
+    {
         auto msg = bus.new_signal(path.c_str(),
                                   "xyz.openbmc_project.RDE.OperationTask",
                                   "TaskUpdated");
 
-        // Dictionary to hold changed properties
         std::map<std::string, std::variant<std::string, uint16_t>> changed;
         changed.emplace("payload", payload);
         changed.emplace("return_code", returnCode);
@@ -60,10 +95,11 @@ int emitTaskUpdatedSignal(sdbusplus::bus_t& bus, const std::string& path,
             "RDE: Failed to emit TaskUpdated signal for path={PATH}, error={ERR}, return_code={RC}",
             "PATH", path, "ERR", e.what(), "RC", returnCode);
 
-        return PLDM_ERROR;
+        rc = PLDM_ERROR;
     }
 
-    return PLDM_SUCCESS;
+    scheduleTaskCleanup(manager, path, returnCode);
+    return rc;
 }
 
 } // namespace pldm::rde

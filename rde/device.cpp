@@ -214,7 +214,8 @@ bool Device::getAPCBTokenCache(
 
             const int signalRc = emitTaskUpdatedSignal(
                 self->bus_, taskPath, payload,
-                static_cast<uint16_t>(OpState::OperationCompleted));
+                static_cast<uint16_t>(OpState::OperationCompleted),
+                self->getManager());
             if (signalRc != PLDM_SUCCESS)
             {
                 error(
@@ -460,6 +461,12 @@ void Device::processNextCachedOperation()
         error(
             "RDE Cache Replay: Failed to replay operation for UUID={UUID}: {MSG}, continuing with next",
             "UUID", deviceUUID(), "MSG", e.what());
+
+        if (currentReplayOperationId_ != 0 && manager_ != nullptr)
+        {
+            manager_->scheduleUnregisterOperationTask(
+                currentReplayOperationId_);
+        }
 
         // Mark failed-to-start operation as complete so we can move to next
         cacheManager.completeOperation(deviceUUID(), currentReplayTimestamp_);
@@ -889,16 +896,21 @@ void Device::sendBiosZeroLengthCommand()
     }
 }
 
-void Device::setManager(Manager* manager)
-{
-    manager_ = manager;
-}
-
 void Device::setCacheManager(CacheManagerObject* manager)
 {
     cacheManager_ = manager;
 }
 #endif
+
+void Device::setManager(Manager* manager)
+{
+    manager_ = manager;
+}
+
+Manager* Device::getManager() const
+{
+    return manager_;
+}
 
 Metadata& Device::getMetadata()
 {
