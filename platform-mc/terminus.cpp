@@ -2,6 +2,7 @@
 
 #include "dbus_impl_fru.hpp"
 #include "terminus_manager.hpp"
+#include "sensor_manager.hpp"
 
 #include <libpldm/platform.h>
 
@@ -16,11 +17,12 @@ namespace platform_mc
 
 Terminus::Terminus(pldm_tid_t tid, uint64_t supportedTypes,
                    sdeventplus::Event& event,
-                   TerminusManager& terminusManager) :
+                   TerminusManager& terminusManager,
+                   SensorManager* sensorManager) :
     initialized(false), maxBufferSize(PLDM_PLATFORM_EVENT_MSG_MAX_BUFFER_SIZE),
     synchronyConfigurationSupported(0), pollEvent(false), tid(tid),
     supportedTypes(supportedTypes), event(event),
-    terminusManager(terminusManager)
+    terminusManager(terminusManager), sensorManager(sensorManager)
 {}
 
 bool Terminus::doesSupportType(uint8_t type)
@@ -703,7 +705,8 @@ void Terminus::addNumericSensor(
     try
     {
         auto sensor = std::make_shared<NumericSensor>(
-            tid, true, pdr, sensorName, inventoryPath);
+            tid, true, pdr, sensorName, inventoryPath, sensorManager,
+            terminusScope);
         lg2::info("Created NumericSensor {NAME}", "NAME", sensorName);
         numericSensors.emplace_back(sensor);
     }
@@ -876,7 +879,8 @@ void Terminus::addCompactNumericSensor(
     try
     {
         auto sensor = std::make_shared<NumericSensor>(
-            tid, true, pdr, sensorName, inventoryPath);
+            tid, true, pdr, sensorName, inventoryPath, sensorManager,
+            terminusScope);
         lg2::info("Created Compact NumericSensor {NAME}", "NAME", sensorName);
         numericSensors.emplace_back(sensor);
     }

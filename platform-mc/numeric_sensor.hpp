@@ -49,6 +49,39 @@ using AssociationDefinitionsInft = sdbusplus::server::object_t<
 using EntityIntf = sdbusplus::server::object_t<
     sdbusplus::xyz::openbmc_project::Inventory::Source::PLDM::server::Entity>;
 
+class NumericSensor; // Forward declaration
+class SensorManager; // forward declaration
+
+/** @brief Custom implementation of the Value interface for numeric sensors.
+ *
+ *  This class overrides the standard sdbusplus Value interface to provide
+ *  specialized handling for property access, such as triggering hardware
+ *  polls when the value is requested via D-Bus.
+ */
+class SensorValue : public ValueIntf {
+public:
+    SensorValue(sdbusplus::bus_t& bus, const char* path, pldm::platform_mc::NumericSensor& nS) :
+        ValueIntf(bus, path, ValueIntf::action::emit_object_added),
+        nSensor(nS)
+    {}
+
+    /** @brief Get the sensor reading property.
+     *
+     *  This override triggers an asynchronous hardware poll to update the
+     *  sensor reading when the D-Bus property is accessed (Read-on-Demand).
+     *
+     *  @return The current sensor value stored in the D-Bus interface.
+     */
+    double value() const override;
+
+    double value(double val) override {
+        return ValueIntf::value(val);
+    }
+
+private:
+    pldm::platform_mc::NumericSensor& nSensor;
+};
+
 /**
  * @brief NumericSensor
  *
@@ -60,11 +93,13 @@ class NumericSensor
   public:
     NumericSensor(const pldm_tid_t tid, const bool sensorDisabled,
                   std::shared_ptr<pldm_numeric_sensor_value_pdr> pdr,
-                  std::string& sensorName, std::string& associationPath);
+                  std::string& sensorName, std::string& associationPath,
+                  SensorManager* sensorManager, exec::__scope::async_scope& scope);
 
     NumericSensor(const pldm_tid_t tid, const bool sensorDisabled,
                   std::shared_ptr<pldm_compact_numeric_sensor_pdr> pdr,
-                  std::string& sensorName, std::string& associationPath);
+                  std::string& sensorName, std::string& associationPath,
+                  SensorManager* sensorManager, exec::__scope::async_scope& scope);
 
     ~NumericSensor() {};
 
@@ -247,6 +282,18 @@ class NumericSensor
     /** @brief Sensor Unit */
     SensorUnit sensorUnit;
 
+    /** @brief Sensor Manager to read sensor reading */
+    SensorManager* sensorManager;
+
+    /** @brief Scope to manage the lifetime of asynchronous sensor reading tasks */
+    exec::__scope::async_scope& scope;
+
+    /** @brief Flag to enable Read-on-Demand only after initialization is complete */
+    bool isReady{false};
+
+    /** @brief Flag to prevent multiple concurrent hardware polls for the same sensor */
+    std::atomic<bool> pollPending{false};
+
   private:
     /**
      * @brief Check sensor reading if any threshold has been crossed and update
@@ -275,7 +322,7 @@ class NumericSensor
         const uint16_t containerId);
 
     std::unique_ptr<MetricIntf> metricIntf = nullptr;
-    std::unique_ptr<ValueIntf> valueIntf = nullptr;
+    std::unique_ptr<SensorValue> valueIntf = nullptr;
     std::unique_ptr<ThresholdWarningIntf> thresholdWarningIntf = nullptr;
     std::unique_ptr<ThresholdCriticalIntf> thresholdCriticalIntf = nullptr;
     std::unique_ptr<ThresholdHardShutdownIntf> thresholdHardShutdownIntf =

@@ -54,14 +54,22 @@ class TerminusManager
     explicit TerminusManager(
         sdeventplus::Event& event, RequesterHandler& handler,
         pldm::InstanceIdDb& instanceIdDb, TerminiMapper& termini,
-        Manager* manager, mctp_eid_t localEid) :
+        Manager* manager, mctp_eid_t localEid, SensorManager* sensorManager) :
         handler(handler), instanceIdDb(instanceIdDb), termini(termini),
         tidPool(tidPoolSize, false), manager(manager), localEid(localEid),
-        event(event)
+        event(event), sensorManager(sensorManager)
     {
         // DSP0240 v1.1.0 table-8, special value: 0,0xFF = reserved
         tidPool[0] = true;
         tidPool[PLDM_TID_RESERVED] = true;
+    }
+
+    /** @brief Set the Sensor Manager pointer
+     *
+     *  @param[in] manager - Pointer to the Sensor Manager
+     */
+    void setSensorManager(SensorManager* manager) {
+         sensorManager = manager;
     }
 
     /** @brief start a coroutine to discover terminus
@@ -309,6 +317,9 @@ class TerminusManager
      *  work
      */
     sdeventplus::Event& event;
+
+    /** @brief A Sensor Manager instance **/
+    SensorManager* sensorManager;
 };
 } // namespace platform_mc
 } // namespace pldm

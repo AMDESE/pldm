@@ -360,7 +360,7 @@ exec::task<int> TerminusManager::initMctpTerminus(const MctpInfo& mctpInfo)
     try
     {
         termini[tid] =
-            std::make_shared<Terminus>(tid, supportedTypes, event, *this);
+            std::make_shared<Terminus>(tid, supportedTypes, event, *this, sensorManager);
     }
     catch (const sdbusplus::exception_t& e)
     {
