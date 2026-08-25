@@ -20,6 +20,11 @@ namespace pldm
 namespace platform_mc
 {
 
+/* Must track the default of the same name in platform-mc/numeric_sensor.cpp,
+ * which is file-local there. Milliseconds; NumericSensor::updateTime is usec.
+ */
+static constexpr uint64_t DEFAULT_SENSOR_UPDATER_INTERVAL = 999;
+
 double vectorToDouble(const std::vector<uint8_t>& vec,
                       pldm_effecter_data_size sizeEnum)
 {
