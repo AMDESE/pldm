@@ -39,11 +39,11 @@ size_t PackageParser::parseFDIdentificationArea(
         variable_field fwDevicePkgData{};
         variable_field referenceManifestData{};
 
-        auto rc = decode_firmware_device_id_record(
+        auto rc = decode_firmware_device_id_record_with_revision(
             pkgHdr.data() + offset, pkgHdrRemainingSize,
-            componentBitmapBitLength, &deviceIdRecHeader, &applicableComponents,
-            &compImageSetVersionStr, &recordDescriptors, &fwDevicePkgData);
-        (void)referenceManifestData;
+            componentBitmapBitLength, PackageRev, &deviceIdRecHeader,
+            &applicableComponents, &compImageSetVersionStr, &recordDescriptors,
+            &fwDevicePkgData, &referenceManifestData);
         if (rc)
         {
             error(
