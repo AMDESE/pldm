@@ -692,7 +692,9 @@ void InventoryManager::getFirmwareParameters(
         auto compIdentifier = compEntry.comp_identifier;
         componentInfo.emplace(
             std::make_pair(compClassification, compIdentifier),
-            compEntry.comp_classification_index);
+            ComponentInfoEntry{
+                compEntry.comp_classification_index,
+                CompActivationMethods(compEntry.comp_activation_methods.value)});
 
         if (firmwareDeviceNameMap.contains(eid) and descriptorMap.contains(eid))
         {

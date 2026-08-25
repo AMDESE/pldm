@@ -131,6 +131,9 @@ endif
 if get_option('fw-update-pkg-inotify').allowed()
     conf_data.set('FW_UPDATE_INOTIFY_ENABLED', 1)
 endif
+if get_option('serial-multi-device-fw-update')
+    conf_data.set('PLDM_SERIAL_MULTI_DEVICE_FW_UPDATE', 1)
+endif
 
 configure_file(output: 'config.h', configuration: conf_data)
 

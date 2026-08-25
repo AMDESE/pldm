@@ -136,7 +136,22 @@ using CompIdentifier = uint16_t;
 using SoftwareIdentifier = std::pair<eid, CompIdentifier>;
 using CompKey = std::pair<CompClassification, CompIdentifier>;
 using CompClassificationIndex = uint8_t;
-using ComponentInfo = std::map<CompKey, CompClassificationIndex>;
+using CompActivationMethods = std::bitset<16>;
+
+struct ComponentInfoEntry
+{
+    CompClassificationIndex compClassificationIndex{};
+    CompActivationMethods compActivationMethods{};
+
+    friend bool operator==(const ComponentInfoEntry& lhs,
+                           const ComponentInfoEntry& rhs)
+    {
+        return lhs.compClassificationIndex == rhs.compClassificationIndex &&
+               lhs.compActivationMethods == rhs.compActivationMethods;
+    }
+};
+
+using ComponentInfo = std::map<CompKey, ComponentInfoEntry>;
 using ComponentInfoMap = std::unordered_map<eid, ComponentInfo>;
 
 // PackageHeaderInformation
@@ -144,6 +159,7 @@ using PackageHeaderSize = size_t;
 using PackageVersion = std::string;
 using ComponentBitmapBitLength = uint16_t;
 using PackageHeaderChecksum = uint32_t;
+using PackagePayloadChecksum = uint32_t;
 
 // FirmwareDeviceIDRecords
 using DeviceIDRecordCount = uint8_t;
@@ -151,11 +167,15 @@ using DeviceUpdateOptionFlags = std::bitset<32>;
 using ApplicableComponents = std::vector<size_t>;
 using ComponentImageSetVersion = std::string;
 using FirmwareDevicePackageData = std::vector<uint8_t>;
+using ReferenceManifestData = std::vector<uint8_t>;
 using FirmwareDeviceIDRecord =
     std::tuple<DeviceUpdateOptionFlags, ApplicableComponents,
                ComponentImageSetVersion, Descriptors,
-               FirmwareDevicePackageData>;
+               FirmwareDevicePackageData, ReferenceManifestData>;
 using FirmwareDeviceIDRecords = std::vector<FirmwareDeviceIDRecord>;
+
+// DownstreamDeviceIDRecords (Rev 1.2.0)
+using DownstreamDeviceIDRecordCount = uint8_t;
 
 // ComponentImageInformation
 using ComponentImageCount = uint16_t;
@@ -170,6 +190,8 @@ using ComponentImageInfo =
                CompOptions, ReqCompActivationMethod, CompLocationOffset,
                CompSize, CompVersion>;
 using ComponentImageInfos = std::vector<ComponentImageInfo>;
+// Component Opaque Data (Rev 1.2.0)
+using CompOpaqueDataLength = uint32_t;
 
 enum class ComponentImageInfoPos : size_t
 {

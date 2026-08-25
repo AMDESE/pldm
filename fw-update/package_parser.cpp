@@ -8,6 +8,7 @@
 #include <phosphor-logging/lg2.hpp>
 #include <xyz/openbmc_project/Common/error.hpp>
 
+#include <algorithm>
 #include <memory>
 
 PHOSPHOR_LOG2_USING;
@@ -17,6 +18,8 @@ namespace pldm
 
 namespace fw_update
 {
+
+uint8_t PackageRev = REV_1_3;
 
 using InternalFailure =
     sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
@@ -34,11 +37,13 @@ size_t PackageParser::parseFDIdentificationArea(
         variable_field compImageSetVersionStr{};
         variable_field recordDescriptors{};
         variable_field fwDevicePkgData{};
+        variable_field referenceManifestData{};
 
         auto rc = decode_firmware_device_id_record(
             pkgHdr.data() + offset, pkgHdrRemainingSize,
             componentBitmapBitLength, &deviceIdRecHeader, &applicableComponents,
             &compImageSetVersionStr, &recordDescriptors, &fwDevicePkgData);
+        (void)referenceManifestData;
         if (rc)
         {
             error(
@@ -132,7 +137,10 @@ size_t PackageParser::parseFDIdentificationArea(
             utils::toString(compImageSetVersionStr), std::move(descriptors),
             FirmwareDevicePackageData{
                 fwDevicePkgData.ptr,
-                fwDevicePkgData.ptr + fwDevicePkgData.length}));
+                fwDevicePkgData.ptr + fwDevicePkgData.length},
+            ReferenceManifestData{
+                referenceManifestData.ptr,
+                referenceManifestData.ptr + referenceManifestData.length}));
         offset += deviceIdRecHeader.record_length;
         pkgHdrRemainingSize -= deviceIdRecHeader.record_length;
     }
@@ -182,6 +190,23 @@ size_t PackageParser::parseCompImageInfoArea(ComponentImageCount compImageCount,
                   compImageInfo.comp_version_string_length;
         pkgHdrRemainingSize -= sizeof(pldm_component_image_information) +
                                compImageInfo.comp_version_string_length;
+
+        if (PackageRev >= REV_1_2)
+        {
+            auto compOpaqueDataLength =
+                static_cast<CompOpaqueDataLength>(pkgHdr[offset]);
+            offset += sizeof(CompOpaqueDataLength);
+
+            pkgHdrRemainingSize -= sizeof(CompOpaqueDataLength);
+
+            if (compOpaqueDataLength)
+            {
+                error(
+                    "Optional Component Opaque Data at offset '{OFFSET}' is not supported yet",
+                    "OFFSET", lg2::hex, offset);
+                throw InternalFailure();
+            }
+        }
     }
 
     return offset;
@@ -198,7 +223,8 @@ void PackageParser::validatePkgTotalSize(uintmax_t pkgSize)
             std::get<static_cast<size_t>(ComponentImageInfoPos::CompSizePos)>(
                 componentImageInfo);
 
-        if (compLocOffset != calcPkgSize)
+        // Component must start at or after end of header (allows alignment padding)
+        if (compLocOffset < calcPkgSize)
         {
             auto cmpVersion = std::get<static_cast<size_t>(
                 ComponentImageInfoPos::CompVersionPos)>(componentImageInfo);
@@ -209,7 +235,9 @@ void PackageParser::validatePkgTotalSize(uintmax_t pkgSize)
             throw InternalFailure();
         }
 
-        calcPkgSize += compSize;
+        // Have to use the compLocOffset due to possible padding between header
+        // and components
+        calcPkgSize = compLocOffset + compSize;
     }
 
     if (calcPkgSize != pkgSize)
@@ -249,6 +277,26 @@ void PackageParserV1::parse(const std::vector<uint8_t>& pkgHdr,
               "DREC_CNT", deviceIdRecCount);
         throw InternalFailure();
     }
+
+    if (PackageRev >= REV_1_2)
+    {
+        if (offset + sizeof(DownstreamDeviceIDRecordCount) > pkgHeaderSize)
+        {
+            error("Failed to parsing package header of size '{PKG_HDR_SIZE}'",
+                  "PKG_HDR_SIZE", lg2::hex, pkgHeaderSize);
+            throw InternalFailure();
+        }
+        auto downstreamDeviceIdRecCount =
+            static_cast<DownstreamDeviceIDRecordCount>(pkgHdr[offset]);
+        offset += sizeof(DownstreamDeviceIDRecordCount);
+
+        if (downstreamDeviceIdRecCount)
+        {
+            error("Downstream Device ID Records are not supported yet");
+            throw InternalFailure();
+        }
+    }
+
     if (offset + sizeof(ComponentImageCount) >= pkgHeaderSize)
     {
         error("Failed to parsing package header of size '{PKG_HDR_SIZE}'",
@@ -268,11 +316,25 @@ void PackageParserV1::parse(const std::vector<uint8_t>& pkgHdr,
         throw InternalFailure();
     }
 
-    if (offset + sizeof(PackageHeaderChecksum) != pkgHeaderSize)
+    if (PackageRev >= REV_1_3)
     {
-        error("Failed to parse package header of size '{PKG_HDR_SIZE}'",
-              "PKG_HDR_SIZE", pkgHeaderSize);
-        throw InternalFailure();
+        if (offset + sizeof(PackageHeaderChecksum) +
+                sizeof(PackagePayloadChecksum) !=
+            pkgHeaderSize)
+        {
+            error("Failed to parse package header of size '{PKG_HDR_SIZE}'",
+                  "PKG_HDR_SIZE", pkgHeaderSize);
+            throw InternalFailure();
+        }
+    }
+    else
+    {
+        if (offset + sizeof(PackageHeaderChecksum) != pkgHeaderSize)
+        {
+            error("Failed to parse package header of size '{PKG_HDR_SIZE}'",
+                  "PKG_HDR_SIZE", pkgHeaderSize);
+            throw InternalFailure();
+        }
     }
 
     auto calcChecksum = pldm_edac_crc32(pkgHdr.data(), offset);
@@ -293,10 +355,20 @@ void PackageParserV1::parse(const std::vector<uint8_t>& pkgHdr,
 
 std::unique_ptr<PackageParser> parsePkgHeader(std::vector<uint8_t>& pkgData)
 {
-    constexpr std::array<uint8_t, PLDM_FWUP_UUID_LENGTH> hdrIdentifierv1{
-        0xF0, 0x18, 0x87, 0x8C, 0xCB, 0x7D, 0x49, 0x43,
-        0x98, 0x00, 0xA0, 0x2F, 0x05, 0x9A, 0xCA, 0x02};
-    constexpr uint8_t pkgHdrVersion1 = 0x01;
+    const PackageHeaderDesc hdrIdentifier[PLDM_FWUP_REV_COUNTS] = {
+        {{0xF0, 0x18, 0x87, 0x8C, 0xCB, 0x7D, 0x49, 0x43, 0x98, 0x00, 0xA0,
+          0x2F, 0x05, 0x9A, 0xCA, 0x02},
+         REV_1_0, true, "1.0.0"},
+        {{0x12, 0x44, 0xD2, 0x64, 0x8D, 0x7D, 0x47, 0x18, 0xA0, 0x30, 0xFC,
+          0x8A, 0x56, 0x58, 0x7D, 0x5A},
+         REV_1_1, false, "1.1.0"},
+        {{0x31, 0x19, 0xCE, 0x2F, 0xE8, 0x0A, 0x4A, 0x99, 0xAF, 0x6D, 0x46,
+          0xF8, 0xB1, 0x21, 0xF6, 0xBF},
+         REV_1_2, false, "1.2.0"},
+        {{0x7B, 0x29, 0x1C, 0x99, 0x6D, 0xB6, 0x42, 0x08, 0x80, 0x1B, 0x02,
+          0x02, 0x6E, 0x46, 0x3C, 0x78},
+         REV_1_3, true, "1.3.0"},
+    };
 
     pldm_package_header_information pkgHeader{};
     variable_field pkgVersion{};
@@ -310,15 +382,31 @@ std::unique_ptr<PackageParser> parsePkgHeader(std::vector<uint8_t>& pkgData)
         return nullptr;
     }
 
-    if (std::equal(pkgHeader.uuid, pkgHeader.uuid + PLDM_FWUP_UUID_LENGTH,
-                   hdrIdentifierv1.begin(), hdrIdentifierv1.end()) &&
-        (pkgHeader.package_header_format_version == pkgHdrVersion1))
+    for (int i = 0; i < PLDM_FWUP_REV_COUNTS; i++)
     {
-        PackageHeaderSize pkgHdrSize = pkgHeader.package_header_size;
-        ComponentBitmapBitLength componentBitmapBitLength =
-            pkgHeader.component_bitmap_bit_length;
-        return std::make_unique<PackageParserV1>(
-            pkgHdrSize, utils::toString(pkgVersion), componentBitmapBitLength);
+        if (std::equal(pkgHeader.uuid, pkgHeader.uuid + PLDM_FWUP_UUID_LENGTH,
+                       hdrIdentifier[i].identifier.begin(),
+                       hdrIdentifier[i].identifier.end()) &&
+            (pkgHeader.package_header_format_version ==
+             hdrIdentifier[i].revNumber))
+        {
+            if (!hdrIdentifier[i].supported)
+            {
+                error(
+                    "Package format Rev '{REV}' is recognized, but not supported yet",
+                    "REV", hdrIdentifier[i].rev);
+                return nullptr;
+            }
+            info("Package image format: Rev '{REV}'", "REV",
+                 hdrIdentifier[i].rev);
+            PackageRev = hdrIdentifier[i].revNumber;
+            PackageHeaderSize pkgHdrSize = pkgHeader.package_header_size;
+            ComponentBitmapBitLength componentBitmapBitLength =
+                pkgHeader.component_bitmap_bit_length;
+            return std::make_unique<PackageParserV1>(
+                pkgHdrSize, utils::toString(pkgVersion),
+                componentBitmapBitLength);
+        }
     }
 
     return nullptr;

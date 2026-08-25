@@ -60,6 +60,7 @@ TEST(PackageParser, ValidPkgSingleDescriptorSingleComponent)
            std::vector<uint8_t>{0x16, 0x20, 0x23, 0xC9, 0x3E, 0xC5, 0x41, 0x15,
                                 0x95, 0xF4, 0x48, 0x70, 0x1D, 0x49, 0xD6,
                                 0x75}}},
+         {},
          {}},
     };
     EXPECT_EQ(outfwDeviceIDRecords, fwDeviceIDRecords);
@@ -133,6 +134,7 @@ TEST(PackageParser, ValidPkgMultipleDescriptorsMultipleComponents)
            std::vector<uint8_t>{0x47, 0x16, 0x00, 0x00}},
           {PLDM_FWUP_VENDOR_DEFINED,
            std::make_tuple("OpenBMC", std::vector<uint8_t>{0x12, 0x34})}},
+         {},
          {}},
         {0,
          {0, 1, 2},
@@ -141,6 +143,7 @@ TEST(PackageParser, ValidPkgMultipleDescriptorsMultipleComponents)
            std::vector<uint8_t>{0x12, 0x44, 0xD2, 0x64, 0x8D, 0x7D, 0x47, 0x18,
                                 0xA0, 0x30, 0xFC, 0x8A, 0x56, 0x58, 0x7D,
                                 0x5C}}},
+         {},
          {}},
         {0,
          {0},
@@ -149,6 +152,7 @@ TEST(PackageParser, ValidPkgMultipleDescriptorsMultipleComponents)
            std::vector<uint8_t>{0x12, 0x44, 0xD2, 0x64, 0x8D, 0x7D, 0x47, 0x18,
                                 0xA0, 0x30, 0xFC, 0x8A, 0x56, 0x58, 0x7D,
                                 0x5D}}},
+         {},
          {}},
     };
     EXPECT_EQ(outfwDeviceIDRecords, fwDeviceIDRecords);

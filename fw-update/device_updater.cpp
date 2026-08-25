@@ -114,6 +114,7 @@ DeviceUpdater::DeviceUpdater(
 
 void DeviceUpdater::startFwUpdateFlow()
 {
+    info("startFwUpdateFlow");
     auto instanceIdResult = updateManager->instanceIdDb.next(eid);
     if (!instanceIdResult)
     {
@@ -125,7 +126,9 @@ void DeviceUpdater::startFwUpdateFlow()
         std::get<ApplicableComponents>(fwDeviceIDRecord);
     // PackageDataLength
     const auto& fwDevicePkgData =
-        std::get<FirmwareDevicePackageData>(fwDeviceIDRecord);
+        std::get<4>(fwDeviceIDRecord); // new entry same type, hence use idx
+    const auto& manifestData = std::get<5>(fwDeviceIDRecord);
+    (void)manifestData;
     // ComponentImageSetVersionString
     const auto& compImageSetVersion =
         std::get<ComponentImageSetVersion>(fwDeviceIDRecord);
@@ -172,6 +175,7 @@ void DeviceUpdater::startFwUpdateFlow()
 void DeviceUpdater::requestUpdate(mctp_eid_t eid, const pldm_msg* response,
                                   size_t respMsgLen)
 {
+    info("requestUpdate");
     if (response == nullptr || !respMsgLen)
     {
         // Handle error scenario
@@ -213,6 +217,7 @@ void DeviceUpdater::requestUpdate(mctp_eid_t eid, const pldm_msg* response,
 
 void DeviceUpdater::sendPassCompTableRequest(size_t offset)
 {
+    info("sendPassCompTableRequest");
     pldmRequest.reset();
 
     auto instanceIdResult = updateManager->instanceIdDb.next(eid);
@@ -241,6 +246,23 @@ void DeviceUpdater::sendPassCompTableRequest(size_t offset)
     {
         transferFlag = PLDM_MIDDLE;
     }
+    if (offset >= applicableComponents.size())
+    {
+        error(
+            "PassComponentTable offset '{OFFSET}' out of range for applicable components size '{SIZE}'",
+            "OFFSET", offset, "SIZE", applicableComponents.size());
+        updateManager->updateDeviceCompletion(eid, false);
+        return;
+    }
+    const size_t compIndex = applicableComponents[offset];
+    if (compIndex >= compImageInfos.size())
+    {
+        error(
+            "Applicable component index '{COMP_INDEX}' out of range for component image count '{COUNT}'",
+            "COMP_INDEX", compIndex, "COUNT", compImageInfos.size());
+        updateManager->updateDeviceCompletion(eid, false);
+        return;
+    }
     const auto& comp = compImageInfos[applicableComponents[offset]];
     // ComponentClassification
     CompClassification compClassification = std::get<static_cast<size_t>(
@@ -255,7 +277,7 @@ void DeviceUpdater::sendPassCompTableRequest(size_t offset)
     if (compInfo.contains(compKey))
     {
         auto search = compInfo.find(compKey);
-        compClassificationIndex = search->second;
+        compClassificationIndex = search->second.compClassificationIndex;
     }
     else
     {
@@ -311,6 +333,7 @@ void DeviceUpdater::sendPassCompTableRequest(size_t offset)
 void DeviceUpdater::passCompTable(mctp_eid_t eid, const pldm_msg* response,
                                   size_t respMsgLen)
 {
+    info("passCompTable");
     if (response == nullptr || !respMsgLen)
     {
         // Handle error scenario
@@ -370,6 +393,7 @@ void DeviceUpdater::passCompTable(mctp_eid_t eid, const pldm_msg* response,
 
 void DeviceUpdater::sendUpdateComponentRequest(size_t offset)
 {
+    info("sendUpdateComponentRequest");
     pldmRequest.reset();
     auto instanceIdResult = updateManager->instanceIdDb.next(eid);
     if (!instanceIdResult)
@@ -393,7 +417,7 @@ void DeviceUpdater::sendUpdateComponentRequest(size_t offset)
     if (compInfo.contains(compKey))
     {
         auto search = compInfo.find(compKey);
-        compClassificationIndex = search->second;
+        compClassificationIndex = search->second.compClassificationIndex;
     }
     else
     {
@@ -411,6 +435,9 @@ void DeviceUpdater::sendUpdateComponentRequest(size_t offset)
     variable_field compVerStrInfo{};
     compVerStrInfo.ptr = reinterpret_cast<const uint8_t*>(compVersion.data());
     compVerStrInfo.length = static_cast<uint8_t>(compVersion.size());
+
+    info("sendUpdateComponentRequest version '{COMPONENT_VERSION}'",
+         "COMPONENT_VERSION", compVersion);
 
     Request request(
         sizeof(pldm_msg_hdr) + sizeof(struct pldm_update_component_req) +
@@ -451,6 +478,7 @@ void DeviceUpdater::sendUpdateComponentRequest(size_t offset)
 void DeviceUpdater::updateComponent(mctp_eid_t eid, const pldm_msg* response,
                                     size_t respMsgLen)
 {
+    info("updateComponent");
     if (response == nullptr || !respMsgLen)
     {
         // Handle error scenario
@@ -919,6 +947,7 @@ Response DeviceUpdater::applyComplete(const pldm_msg* request,
 
 void DeviceUpdater::sendActivateFirmwareRequest()
 {
+    info("sendActivateFirmwareRequest");
     pldmRequest.reset();
     auto instanceIdResult = updateManager->instanceIdDb.next(eid);
     if (!instanceIdResult)
@@ -930,8 +959,40 @@ void DeviceUpdater::sendActivateFirmwareRequest()
         sizeof(pldm_msg_hdr) + sizeof(struct pldm_activate_firmware_req));
     auto requestMsg = new (request.data()) pldm_msg;
 
+    bool activateSelfContainedComponents = false;
+    const auto& applicableComponents =
+        std::get<ApplicableComponents>(fwDeviceIDRecord);
+    for (const auto& compImageIndex : applicableComponents)
+    {
+        const auto& comp = compImageInfos[compImageIndex];
+        const CompClassification compClassification =
+            std::get<static_cast<size_t>(
+                ComponentImageInfoPos::CompClassificationPos)>(comp);
+        const CompIdentifier compIdentifier = std::get<static_cast<size_t>(
+            ComponentImageInfoPos::CompIdentifierPos)>(comp);
+        const auto compKey =
+            std::make_pair(compClassification, compIdentifier);
+        const auto search = compInfo.find(compKey);
+        if (search != compInfo.end() &&
+            search->second.compActivationMethods.test(
+                PLDM_ACTIVATION_SELF_CONTAINED))
+        {
+            activateSelfContainedComponents = true;
+            break;
+        }
+    }
+
+    const auto selfContainedActivationRequest =
+        activateSelfContainedComponents
+            ? PLDM_ACTIVATE_SELF_CONTAINED_COMPONENTS
+            : PLDM_NOT_ACTIVATE_SELF_CONTAINED_COMPONENTS;
+    info(
+        "selfContainedActivationRequest: {ACTIVATION_REQUEST} (ACTIVATE_SELF={ACTIVATE_SELF} NOT_ACTIVATE_SELF={NOT_ACTIVATE_SELF})",
+        "ACTIVATION_REQUEST", selfContainedActivationRequest, "ACTIVATE_SELF",
+        PLDM_ACTIVATE_SELF_CONTAINED_COMPONENTS, "NOT_ACTIVATE_SELF",
+        PLDM_NOT_ACTIVATE_SELF_CONTAINED_COMPONENTS);
     auto rc = encode_activate_firmware_req(
-        instanceId, PLDM_NOT_ACTIVATE_SELF_CONTAINED_COMPONENTS, requestMsg,
+        instanceId, selfContainedActivationRequest, requestMsg,
         sizeof(pldm_activate_firmware_req));
     if (rc)
     {
@@ -957,6 +1018,7 @@ void DeviceUpdater::sendActivateFirmwareRequest()
 void DeviceUpdater::activateFirmware(mctp_eid_t eid, const pldm_msg* response,
                                      size_t respMsgLen)
 {
+    info("activateFirmware");
     if (response == nullptr || !respMsgLen)
     {
         // Handle error scenario

@@ -4,8 +4,10 @@
 
 #include <libpldm/firmware_update.h>
 
+#include <array>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace pldm
@@ -13,6 +15,26 @@ namespace pldm
 
 namespace fw_update
 {
+
+enum
+{
+    REV_UNDEF = 0x00,
+    REV_1_0,
+    REV_1_1,
+    REV_1_2,
+    REV_1_3
+};
+
+#define PLDM_FWUP_REV_COUNTS 4
+typedef struct
+{
+    std::array<uint8_t, PLDM_FWUP_UUID_LENGTH> identifier;
+    uint8_t revNumber;
+    bool supported;
+    std::string rev;
+} PackageHeaderDesc;
+
+extern uint8_t PackageRev;
 
 /** @class PackageParser
  *

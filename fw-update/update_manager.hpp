@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <fstream>
 #include <unordered_map>
+#include <vector>
 
 namespace pldm
 {
@@ -157,6 +158,9 @@ class UpdateManager
     std::unordered_map<mctp_eid_t, std::unique_ptr<DeviceUpdater>>
         deviceUpdaterMap;
     std::unordered_map<mctp_eid_t, bool> deviceUpdateCompletionMap;
+    /** @brief Ordered list of EIDs for serial device updates (one device at a
+     *         time). */
+    std::vector<mctp_eid_t> deviceUpdateOrder;
 
     /** @brief Total number of component updates to calculate the progress of
      *         the Firmware activation

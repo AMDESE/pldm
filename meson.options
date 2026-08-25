@@ -140,3 +140,12 @@ option(
     value: 'disabled',
     description: 'Enable inotify-based firmware update package monitoring',
 )
+
+option(
+    'serial-multi-device-fw-update',
+    type: 'boolean',
+    value: true,
+    description: '''When true, run multi-device PLDM firmware updates one device at
+                    a time (start next device from updateDeviceCompletion). When
+                    false, start all devices in parallel from activatePackage.''',
+)

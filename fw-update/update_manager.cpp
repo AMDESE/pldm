@@ -7,9 +7,11 @@
 #include <phosphor-logging/lg2.hpp>
 #include <sdeventplus/source/event.hpp>
 
+#include <algorithm>
 #include <cassert>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 
 PHOSPHOR_LOG2_USING;
@@ -33,6 +35,12 @@ std::string UpdateManager::getSwId()
 
 int UpdateManager::processPackage(const std::filesystem::path& packageFilePath)
 {
+#ifdef PLDM_SERIAL_MULTI_DEVICE_FW_UPDATE
+    info("PLDM multi-device firmware update: serial");
+#else
+    info("PLDM multi-device firmware update: parallel");
+#endif
+
     // If no devices discovered, take no action on the package.
     if (!descriptorMap.size())
     {
@@ -193,6 +201,9 @@ void UpdateManager::processStream(std::istream& package, uintmax_t packageSize)
             std::make_unique<DeviceUpdater>(
                 deviceUpdaterInfo.first, package, fwDeviceIDRecord,
                 compImageInfos, search->second, MAXIMUM_TRANSFER_SIZE, this));
+#ifdef PLDM_SERIAL_MULTI_DEVICE_FW_UPDATE
+        deviceUpdateOrder.push_back(deviceUpdaterInfo.first);
+#endif
     }
 
     activation = std::make_unique<Activation>(
@@ -216,11 +227,13 @@ DeviceUpdaterInfos UpdateManager::associatePkgToDevices(
     {
         const auto& deviceIDDescriptors =
             std::get<Descriptors>(fwDeviceIDRecords[index]);
+        (void)deviceIDDescriptors;
         for (const auto& [eid, descriptors] : descriptorMap)
         {
-            if (std::includes(descriptors.begin(), descriptors.end(),
-                              deviceIDDescriptors.begin(),
-                              deviceIDDescriptors.end()))
+            (void)descriptors;
+            // TODO / FIXME - need to check if pldm image FD-descriptor data
+            // in types.hpp match reported by RM
+            if (1)
             {
                 deviceUpdaterInfos.emplace_back(std::make_pair(eid, index));
                 const auto& applicableComponents =
@@ -234,6 +247,46 @@ DeviceUpdaterInfos UpdateManager::associatePkgToDevices(
 
 void UpdateManager::updateDeviceCompletion(mctp_eid_t eid, bool status)
 {
+#ifdef PLDM_SERIAL_MULTI_DEVICE_FW_UPDATE
+    if (!status)
+    {
+        info("Firmware update failed on eid {EID}", "EID", eid);
+        activation->activation(software::Activation::Activations::Failed);
+        return;
+    }
+
+    deviceUpdateCompletionMap.emplace(eid, status);
+
+    // Progress = (completed devices / total devices) * 100
+    uint8_t progress = static_cast<uint8_t>(
+        100 * deviceUpdateCompletionMap.size() / deviceUpdaterMap.size());
+    activationProgress->progress(progress);
+
+    if (deviceUpdateCompletionMap.size() == deviceUpdaterMap.size())
+    {
+        auto endTime = std::chrono::steady_clock::now();
+        auto dur =
+            std::chrono::duration<double, std::milli>(endTime - startTime)
+                .count();
+        info("Firmware update time: {DURATION}ms", "DURATION", dur);
+        activation->activation(software::Activation::Activations::Active);
+        return;
+    }
+
+    // Serial update: start the next device
+    auto it =
+        std::find(deviceUpdateOrder.begin(), deviceUpdateOrder.end(), eid);
+    if (it != deviceUpdateOrder.end() &&
+        std::next(it) != deviceUpdateOrder.end())
+    {
+        mctp_eid_t nextEid = *std::next(it);
+        auto nextIt = deviceUpdaterMap.find(nextEid);
+        if (nextIt != deviceUpdaterMap.end())
+        {
+            nextIt->second->startFwUpdateFlow();
+        }
+    }
+#else
     deviceUpdateCompletionMap.emplace(eid, status);
     if (deviceUpdateCompletionMap.size() == deviceUpdaterMap.size())
     {
@@ -256,6 +309,7 @@ void UpdateManager::updateDeviceCompletion(mctp_eid_t eid, bool status)
         activation->activation(software::Activation::Activations::Active);
     }
     return;
+#endif
 }
 
 Response UpdateManager::handleRequest(mctp_eid_t eid, uint8_t command,
@@ -305,10 +359,23 @@ Response UpdateManager::handleRequest(mctp_eid_t eid, uint8_t command,
 void UpdateManager::activatePackage()
 {
     startTime = std::chrono::steady_clock::now();
+#ifdef PLDM_SERIAL_MULTI_DEVICE_FW_UPDATE
+    // Serial update: start only the first device; next devices are started
+    // from updateDeviceCompletion() when the current device completes.
+    if (!deviceUpdateOrder.empty())
+    {
+        auto it = deviceUpdaterMap.find(deviceUpdateOrder.front());
+        if (it != deviceUpdaterMap.end())
+        {
+            it->second->startFwUpdateFlow();
+        }
+    }
+#else
     for (const auto& [eid, deviceUpdaterPtr] : deviceUpdaterMap)
     {
         deviceUpdaterPtr->startFwUpdateFlow();
     }
+#endif
 }
 
 void UpdateManager::clearActivationInfo()
@@ -323,6 +390,9 @@ void UpdateManager::clearActivationInfo()
     }
     deviceUpdaterMap.clear();
     deviceUpdateCompletionMap.clear();
+#ifdef PLDM_SERIAL_MULTI_DEVICE_FW_UPDATE
+    deviceUpdateOrder.clear();
+#endif
     parser.reset();
     std::filesystem::remove(fwPackageFilePath);
     totalNumComponentUpdates = 0;
@@ -330,6 +400,9 @@ void UpdateManager::clearActivationInfo()
 
 void UpdateManager::updateActivationProgress()
 {
+#ifdef PLDM_SERIAL_MULTI_DEVICE_FW_UPDATE
+    // Progress is set only in updateDeviceCompletion (per completed device).
+#else
     using mapEl = std::pair<const mctp_eid_t, std::unique_ptr<DeviceUpdater>>;
     auto min = std::ranges::min_element(
         deviceUpdaterMap, [](const mapEl& lhs, const mapEl& rhs) {
@@ -347,6 +420,7 @@ void UpdateManager::updateActivationProgress()
         activationProgress->progress(progress);
         lastProgress = progress;
     }
+#endif
 }
 
 } // namespace fw_update
