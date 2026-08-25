@@ -561,13 +561,13 @@ void MctpDiscovery::removeConfigs(const MctpInfos& removedInfos)
 {
     for (const auto& mctpInfo : removedInfos)
     {
-        const auto eidToRemove = std::get<eid>(mctpInfo);
+        const auto eidToRemove = std::get<0>(mctpInfo);
         const auto netToRemove = std::get<NetworkId>(mctpInfo);
 
         std::erase_if(configurations, [eidToRemove,
                                        netToRemove](const auto& config) {
             const auto& [__, mctpInfo] = config;
-            const auto eidValue = std::get<eid>(mctpInfo);
+            const auto eidValue = std::get<0>(mctpInfo);
             const auto netValue = std::get<NetworkId>(mctpInfo);
 
             return eidValue == eidToRemove && netValue == netToRemove;

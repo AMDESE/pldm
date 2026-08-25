@@ -16,7 +16,7 @@ void InventoryManager::discoverFDs(const MctpInfos& mctpInfos)
 {
     for (const auto& mctpInfo : mctpInfos)
     {
-        auto eid = std::get<pldm::eid>(mctpInfo);
+        auto eid = std::get<0>(mctpInfo);
         try
         {
             sendQueryDeviceIdentifiersRequest(eid);
@@ -34,7 +34,7 @@ void InventoryManager::removeFDs(const MctpInfos& mctpInfos)
 {
     for (const auto& mctpInfo : mctpInfos)
     {
-        auto eid = std::get<pldm::eid>(mctpInfo);
+        auto eid = std::get<0>(mctpInfo);
         firmwareDeviceNameMap.erase(eid);
         descriptorMap.erase(eid);
         downstreamDescriptorMap.erase(eid);
@@ -725,7 +725,7 @@ std::optional<SoftwareName> obtainDeviceNameFromConfigurations(
 {
     for (const auto& [_, mctpInfo] : configurations)
     {
-        if (std::get<pldm::eid>(mctpInfo) == eid)
+        if (std::get<0>(mctpInfo) == eid)
         {
             auto nameOption = std::get<std::optional<std::string>>(mctpInfo);
             if (nameOption)

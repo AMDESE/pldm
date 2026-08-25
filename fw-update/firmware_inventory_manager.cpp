@@ -93,7 +93,7 @@ std::optional<InventoryPath> FirmwareInventoryManager::getInventoryPath(
 {
     for (const auto& [configDbusPath, configMctpInfo] : configurations)
     {
-        if (std::get<pldm::eid>(configMctpInfo) == eid)
+        if (std::get<0>(configMctpInfo) == eid)
         {
             return configDbusPath;
         }
