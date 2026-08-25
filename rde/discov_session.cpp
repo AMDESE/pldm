@@ -81,7 +81,13 @@ void DiscoverySession::doNegotiateRedfish()
         error("OperationSession: device expired");
         return;
     }
-    auto instanceId = dev->getInstanceIdDb().next(eid_);
+    auto instanceIdResult = dev->getInstanceIdDb().next(eid_);
+    if (!instanceIdResult)
+    {
+        updateState(OpState::OperationFailed);
+        return;
+    }
+    auto instanceId = instanceIdResult.value();
 
     Request request(
         sizeof(pldm_msg_hdr) + PLDM_RDE_NEGOTIATE_REDFISH_PARAMETERS_REQ_BYTES);
@@ -228,7 +234,12 @@ void DiscoverySession::doNegotiateMediumParams()
         error("OperationSession: device expired");
         return;
     }
-    auto instanceId = dev->getInstanceIdDb().next(eid_);
+    auto instanceIdResult = dev->getInstanceIdDb().next(eid_);
+    if (!instanceIdResult)
+    {
+        return;
+    }
+    auto instanceId = instanceIdResult.value();
 
     Request request(
         sizeof(pldm_msg_hdr) + PLDM_RDE_NEGOTIATE_MEDIUM_PARAMETERS_REQ_BYTES);
@@ -403,7 +414,17 @@ void DiscoverySession::runNextDictionaryCommand(size_t index)
 
     resourceIndex_ = index + 1;
 
-    auto instanceId = dev->getInstanceIdDb().next(eid_);
+    auto instanceIdResult = dev->getInstanceIdDb().next(eid_);
+    if (!instanceIdResult)
+    {
+        dictionaryDefer_ = std::make_unique<sdeventplus::source::Defer>(
+            dev->getEvent(), [this](sdeventplus::source::EventBase&) {
+                this->runNextDictionaryCommand(resourceIndex_);
+            });
+
+        return;
+    }
+    auto instanceId = instanceIdResult.value();
 
     size_t payloadLength =
         sizeof(pldm_msg_hdr) + PLDM_RDE_SCHEMA_DICTIONARY_REQ_BYTES;

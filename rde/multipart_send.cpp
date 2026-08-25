@@ -110,7 +110,14 @@ bool MultipartSender::sendMultipartCommand(
             onFailure_("Device expired");
         return false;
     }
-    uint8_t instanceId = dev->getInstanceIdDb().next(eid_);
+    auto instanceIdResult = dev->getInstanceIdDb().next(eid_);
+    if (!instanceIdResult)
+    {
+        if (onFailure_)
+            onFailure_("Instance ID allocation failed");
+        return false;
+    }
+    uint8_t instanceId = instanceIdResult.value();
 
     uint32_t dataLength = payload.size();
     Request request(sizeof(pldm_msg_hdr) +

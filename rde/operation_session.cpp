@@ -262,7 +262,13 @@ void OperationSession::doOperationInit()
     {
         return; // Device already destroyed
     }
-    auto instanceId = dev->getInstanceIdDb().next(eid_);
+    auto instanceIdResult = dev->getInstanceIdDb().next(eid_);
+    if (!instanceIdResult)
+    {
+        updateState(OpState::OperationFailed);
+        return;
+    }
+    auto instanceId = instanceIdResult.value();
 
     int rc = 0;
     const std::string& resourceIdStr =
@@ -658,7 +664,13 @@ void OperationSession::doOperationComplete()
         return; // Device already destroyed
     }
 
-    auto instanceId = dev->getInstanceIdDb().next(eid_);
+    auto instanceIdResult = dev->getInstanceIdDb().next(eid_);
+    if (!instanceIdResult)
+    {
+        updateState(OpState::OperationFailed);
+        return;
+    }
+    auto instanceId = instanceIdResult.value();
 
     ResourceRegistry* resourceRegistry = dev->getRegistry();
     const std::string& resourceIdStr =

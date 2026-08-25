@@ -40,7 +40,14 @@ void MultipartReceiver::sendReceiveRequest(uint32_t handle)
         return;
     }
 
-    uint8_t instanceId = dev->getInstanceIdDb().next(eid_);
+    auto instanceIdResult = dev->getInstanceIdDb().next(eid_);
+    if (!instanceIdResult)
+    {
+        if (onFailure_)
+            onFailure_("RDE: Instance ID allocation failed");
+        return;
+    }
+    uint8_t instanceId = instanceIdResult.value();
 
     lg2::debug("RDE: Allocated Instance ID={ID} for EID={EID}", "ID",
                instanceId, "EID", eid_);
