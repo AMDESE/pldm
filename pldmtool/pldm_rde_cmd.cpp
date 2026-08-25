@@ -4,7 +4,6 @@
 #include "pldm_cmd_helper.hpp"
 
 #include <libpldm/rde.h>
-#include <libpldm/utils.h>
 
 #include <map>
 #include <optional>

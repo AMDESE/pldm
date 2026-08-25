@@ -7,8 +7,8 @@
 #include <libpldm/entity.h>
 #include <libpldm/pdr.h>
 #include <libpldm/platform.h>
+#include <libpldm/pldm_types.h>
 #include <libpldm/rde.h>
-#include <libpldm/utils.h>
 #include <systemd/sd-bus.h>
 #include <unistd.h>
 

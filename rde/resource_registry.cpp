@@ -1,5 +1,6 @@
 #include "resource_registry.hpp"
 
+#include <libpldm/base.h>
 #include <libpldm/platform.h>
 
 #include <nlohmann/json.hpp>
@@ -208,7 +209,8 @@ std::string ResourceRegistry::getMajorSchemaVersion(ver32_t& version)
     }
     else
     {
-        rc = ver2str(&version, version_buffer, sizeof(version_buffer));
+        rc = pldm_base_ver2str(&version, version_buffer,
+                               sizeof(version_buffer));
         if (rc <= 0)
             return "?.?";
     }

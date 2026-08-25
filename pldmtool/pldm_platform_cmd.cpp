@@ -1928,7 +1928,8 @@ class GetPDR : public CommandInterface
             return std::string("?.?");
         else
         {
-            rc = ver2str(&version, version_buffer, sizeof(version_buffer));
+            rc = pldm_base_ver2str(&version, version_buffer,
+                                   sizeof(version_buffer));
         }
         return std::string(version_buffer, rc);
     }

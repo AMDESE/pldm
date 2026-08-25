@@ -2,6 +2,8 @@
 
 #include "../../pldm_cmd_helper.hpp"
 
+#include <libpldm/edac.h>
+
 namespace pldmtool
 {
 
