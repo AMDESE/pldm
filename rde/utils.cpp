@@ -15,47 +15,47 @@ void logCompletionCodeError(uint8_t cc)
 
     switch (cc)
     {
-        case PLDM_RDE_BAD_CHECKSUM:
+        case PLDM_RDE_CC_ERROR_BAD_CHECKSUM:
             message = "BAD_CHECKSUM: The payload checksum is incorrect";
             break;
-        case PLDM_RDE_CANNOT_CREATE_OPERATION:
+        case PLDM_RDE_CC_ERROR_CANNOT_CREATE_OPERATION:
             message = "CANNOT_CREATE_OPERATION: Unable to create operation";
             break;
-        case PLDM_RDE_NOT_ALLOWED:
+        case PLDM_RDE_CC_ERROR_NOT_ALLOWED:
             message = "NOT_ALLOWED: Operation not permitted";
             break;
-        case PLDM_RDE_WRONG_LOCATION_TYPE:
+        case PLDM_RDE_CC_ERROR_WRONG_LOCATION_TYPE:
             message = "WRONG_LOCATION_TYPE: Invalid location type specified";
             break;
-        case PLDM_RDE_ERROR_OPERATION_ABANDONED:
+        case PLDM_RDE_CC_ERROR_OPERATION_ABANDONED:
             message = "OPERATION_ABANDONED: Operation was aborted unexpectedly";
             break;
-        case PLDM_RDE_OPERATION_UNKILLABLE:
+        case PLDM_RDE_CC_ERROR_OPERATION_UNKILLABLE:
             message = "OPERATION_UNKILLABLE: Cannot forcibly cancel operation";
             break;
-        case PLDM_RDE_ERROR_OPERATION_EXISTS:
+        case PLDM_RDE_CC_ERROR_OPERATION_EXISTS:
             message = "OPERATION_EXISTS: Duplicate operation detected";
             break;
-        case PLDM_RDE_ERROR_OPERATION_FAILED:
+        case PLDM_RDE_CC_ERROR_OPERATION_FAILED:
             message = "OPERATION_FAILED: Operation execution failed";
             break;
-        case PLDM_RDE_ERROR_UNEXPECTED:
+        case PLDM_RDE_CC_ERROR_UNEXPECTED:
             message = "UNEXPECTED_ERROR: Internal or unknown error occurred";
             break;
-        case PLDM_RDE_ERROR_UNSUPPORTED:
+        case PLDM_RDE_CC_ERROR_UNSUPPORTED:
             message = "UNSUPPORTED: Command or resource not supported";
             break;
-        case PLDM_RDE_ERROR_UNRECOGNIZED_CUSTOM_HEADER:
+        case PLDM_RDE_CC_ERROR_UNRECOGNIZED_CUSTOM_HEADER:
             message =
                 "UNRECOGNIZED_CUSTOM_HEADER: Header format not recognized";
             break;
-        case PLDM_RDE_ERROR_ETAG_MATCH:
+        case PLDM_RDE_CC_ERROR_ETAG_MATCH:
             message = "ETAG_MATCH_FAILED: ETag comparison mismatch";
             break;
-        case PLDM_RDE_ERROR_NO_SUCH_RESOURCE:
+        case PLDM_RDE_CC_ERROR_NO_SUCH_RESOURCE:
             message = "NO_SUCH_RESOURCE: Referenced resource was not found";
             break;
-        case PLDM_RDE_ERROR_ETAG_CALCULATION_ONGOING:
+        case PLDM_RDE_CC_ETAG_CALCULATION_ONGOING:
             message = "ETAG_CALCULATION_ONGOING: ETag generation in progress";
             break;
         default:
