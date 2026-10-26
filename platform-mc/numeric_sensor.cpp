@@ -297,11 +297,14 @@ NumericSensor::NumericSensor(
     /**
      * DEFAULT_SENSOR_UPDATER_INTERVAL is in milliseconds
      * updateTime is in microseconds
+     *
+     * A zero update_interval keeps the default so the sensor is polled.
+     * updateTime 0 is reserved for a sensor that shares an effecter id.
      */
     updateTime = DEFAULT_SENSOR_UPDATER_INTERVAL * 1000;
-    if (std::isfinite(pdr->update_interval))
+    if (std::isfinite(pdr->update_interval) && pdr->update_interval > 0)
     {
-        updateTime = pdr->update_interval * 1000000;
+        updateTime = static_cast<uint64_t>(pdr->update_interval * 1000000);
     }
 
     if (!useMetricInterface)
