@@ -26,6 +26,7 @@
 #include <sdeventplus/event.hpp>
 #include <sdeventplus/source/event.hpp>
 
+#include <list>
 #include <map>
 #include <memory>
 #include <string>
@@ -355,6 +356,9 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
     std::unique_ptr<pldm::rde::DictionaryManager> dictionaryManager_;
     std::unique_ptr<DiscoverySession> discovSession_;
     std::unique_ptr<OperationSession> opSession_;
+    // UPDATE sessions still polling after opSession_ was reused
+    std::list<std::unique_ptr<OperationSession>> pollingSessions_;
+    void retainPollingSession();
     Manager* manager_ = nullptr;
 #ifdef OEM_AMD
     std::unique_ptr<sdbusplus::bus::match_t> biosGetTaskUpdatedMatch_;
@@ -368,13 +372,15 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
     uint64_t currentReplayTimestamp_ = 0;
     // Flag to track if cache replay is in progress
     bool isReplayInProgress_ = false;
+    // Replayed operations still polled: operation ID -> cache timestamp
+    std::map<uint32_t, uint64_t> polledReplayOps_;
     CacheManagerObject* cacheManager_ = nullptr;
     // Signal match for TaskUpdated to track operation completion
     std::unique_ptr<sdbusplus::bus::match_t> taskUpdatedMatch_;
     // Defer APCB TaskUpdated until after StartRedfishOperation returns to bmcweb
     std::unique_ptr<sdeventplus::source::Defer> deferredApcbTaskSignal_;
 #endif
-    bool shuttingDown_;
+    bool shuttingDown_ = false;
 };
 
 } // namespace pldm::rde

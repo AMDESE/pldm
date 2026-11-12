@@ -85,6 +85,11 @@ std::optional<CacheEntry>
 
     for (auto& entry : it->second)
     {
+        // Replay pending entries only, never retry a failed one in a loop
+        if (entry.status != CacheStatus::Pending)
+        {
+            continue;
+        }
         entry.status = CacheStatus::Processing;
         return entry; // Return a copy
     }

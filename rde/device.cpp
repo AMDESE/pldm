@@ -133,6 +133,7 @@ void Device::performRDEOperation(const OperationInfo& oipInfo)
 
     try
     {
+        retainPollingSession();
         opSession_ = std::make_unique<OperationSession>(self, oipInfo);
         if (!opSession_)
         {
@@ -322,6 +323,50 @@ void Device::replayCachedOperations()
 
                 std::string path = msg.get_path();
 
+                // Final status of a replayed operation polled in background
+                for (auto pIt = self->polledReplayOps_.begin();
+                     pIt != self->polledReplayOps_.end(); ++pIt)
+                {
+                    if (path != "/xyz/openbmc_project/RDE/OperationTask/" +
+                                    std::to_string(pIt->first))
+                    {
+                        continue;
+                    }
+                    std::map<std::string, std::variant<std::string, uint16_t>>
+                        polled;
+                    msg.read(polled);
+                    auto rcIt = polled.find("return_code");
+                    if (rcIt == polled.end())
+                    {
+                        return;
+                    }
+                    const uint16_t code = std::get<uint16_t>(rcIt->second);
+                    if (code ==
+                        static_cast<uint16_t>(OpState::OperationCompleted))
+                    {
+                        RDECacheManager::getInstance().completeOperation(
+                            self->deviceUUID(), pIt->second);
+                    }
+                    else if (code == static_cast<uint16_t>(
+                                         OpState::OperationFailed) ||
+                             code ==
+                                 static_cast<uint16_t>(OpState::Cancelled) ||
+                             code == static_cast<uint16_t>(OpState::TimedOut))
+                    {
+                        RDECacheManager::getInstance().markOperationAsFailed(
+                            self->deviceUUID(), pIt->second);
+                    }
+                    else
+                    {
+                        return;
+                    }
+                    info(
+                        "RDE Cache Replay: Polled operation {OID} finished with TaskStatus={CODE}",
+                        "OID", pIt->first, "CODE", opStateToString(code));
+                    self->polledReplayOps_.erase(pIt);
+                    return;
+                }
+
                 if (self->currentReplayOperationId_ == 0)
                 {
                     return;
@@ -384,6 +429,21 @@ void Device::replayCachedOperations()
                         returnCode);
 
                     self->currentReplayOperationId_ = 0;
+                    self->processNextCachedOperation();
+                }
+                else if (returnCode ==
+                         static_cast<uint16_t>(OpState::OperationExecuting))
+                {
+                    // RUNNING: continue the replay so the zero-length UPDATE
+                    // releases boot; the status poll reports the final result.
+                    self->polledReplayOps_[self->currentReplayOperationId_] =
+                        self->currentReplayTimestamp_;
+                    info(
+                        "RDE Cache Replay: Operation {OID} accepted (RUNNING), status polled in background, processing next operation",
+                        "OID", self->currentReplayOperationId_);
+
+                    self->currentReplayOperationId_ = 0;
+                    self->currentReplayTimestamp_ = 0;
                     self->processNextCachedOperation();
                 }
                 else
@@ -793,6 +853,7 @@ void Device::sendBiosGetCommand()
         });
 
         std::shared_ptr<Device> self = shared_from_this();
+        retainPollingSession();
         opSession_ = std::make_unique<OperationSession>(self, opInfo);
         if (!opSession_)
         {
@@ -874,6 +935,7 @@ void Device::sendBiosZeroLengthCommand()
         manager_->registerOperationTask(operationID, task);
 
         std::shared_ptr<Device> self = shared_from_this();
+        retainPollingSession();
         opSession_ = std::make_unique<OperationSession>(self, opInfo);
         if (!opSession_)
         {
@@ -883,9 +945,16 @@ void Device::sendBiosZeroLengthCommand()
             return;
         }
 
+        std::string polledOps;
+        for (const auto& [polledId, ts] : polledReplayOps_)
+        {
+            polledOps += (polledOps.empty() ? "" : ",") +
+                         std::to_string(polledId);
+        }
         info(
-            "RDE Cache Replay: Sending BIOS zero length command for UUID={UUID}, OperationID={OID}",
-            "UUID", deviceUUID(), "OID", operationID);
+            "RDE Cache Replay: Sending BIOS zero length command for UUID={UUID}, EID={EID}, OperationID={OID}, to release boot; operations still polled={POLLED}",
+            "UUID", deviceUUID(), "EID", static_cast<int>(eid()), "OID",
+            operationID, "POLLED", polledOps.empty() ? "none" : polledOps);
         opSession_->doOperationInit();
     }
     catch (const std::exception& e)
@@ -901,6 +970,18 @@ void Device::setCacheManager(CacheManagerObject* manager)
     cacheManager_ = manager;
 }
 #endif
+
+void Device::retainPollingSession()
+{
+    pollingSessions_.remove_if(
+        [](const std::unique_ptr<OperationSession>& session) {
+            return !session || !session->isStatusPollActive();
+        });
+    if (opSession_ && opSession_->isStatusPollActive())
+    {
+        pollingSessions_.push_back(std::move(opSession_));
+    }
+}
 
 void Device::setManager(Manager* manager)
 {
