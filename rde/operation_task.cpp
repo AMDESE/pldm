@@ -87,7 +87,7 @@ int emitTaskUpdatedSignal(sdbusplus::bus_t& bus, const std::string& path,
         msg.signal_send();
         info(
             "RDE: TaskUpdated signal emitted for path={PATH}, return_code={RC}",
-            "PATH", path, "RC", returnCode);
+            "PATH", path, "RC", opStateToString(returnCode));
     }
     catch (const std::exception& e)
     {

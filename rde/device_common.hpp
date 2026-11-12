@@ -74,6 +74,37 @@ enum class OpState
     TimedOut            // Operation exceeded expected duration
 };
 
+/** @brief Log text "Name(N)" for an OpState / TaskUpdated return_code */
+inline std::string opStateToString(uint16_t state)
+{
+    static constexpr const char* names[] = {
+        "Idle",
+        "DiscoveryStarted",
+        "DiscoveryRunning",
+        "DiscoveryCompleted",
+        "WaitingForResponse",
+        "OperationQueued",
+        "OperationExecuting",
+        "OperationCompleted",
+        "OperationFailed",
+        "Cancelled",
+        "TimedOut"};
+    const std::string name =
+        state < sizeof(names) / sizeof(names[0]) ? names[state] : "Unknown";
+    return name + "(" + std::to_string(state) + ")";
+}
+
+/** @brief Log text "NAME(N)" for a device RDE OperationStatus value */
+inline std::string rdeOpStatusToString(uint8_t status)
+{
+    static constexpr const char* names[] = {
+        "INACTIVE",     "NEEDS_INPUT", "TRIGGERED", "RUNNING",
+        "HAVE_RESULTS", "COMPLETED",   "FAILED",    "ABANDONED"};
+    const std::string name =
+        status < sizeof(names) / sizeof(names[0]) ? names[status] : "UNKNOWN";
+    return name + "(" + std::to_string(status) + ")";
+}
+
 /**
  * @enum DeviceCapabilitiesFlags
  * @brief Flags representing device capabilities.

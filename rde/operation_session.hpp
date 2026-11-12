@@ -13,6 +13,7 @@
 #include <common/types.hpp>
 #include <phosphor-logging/log.hpp>
 #include <requester/handler.hpp>
+#include <sdbusplus/timer.hpp>
 #include <sdeventplus/event.hpp>
 #include <sdeventplus/source/event.hpp>
 
@@ -176,6 +177,11 @@ class OperationSession
     void addChunk(uint32_t resourceId, std::span<const uint8_t> payload,
                   bool hasChecksum, bool isFinalChunk);
 
+    bool isStatusPollActive() const
+    {
+        return statusPollActive_;
+    }
+
   private:
     std::weak_ptr<Device> device_;
     pldm::eid eid_;
@@ -190,6 +196,17 @@ class OperationSession
     bool multiPartTransferFlag = false;
     std::unique_ptr<pldm::rde::MultipartReceiver> receiver_;
     std::unique_ptr<pldm::rde::MultipartSender> sender_;
+
+    // RDEOperationStatus polling for an UPDATE the device reports as not
+    // completed (e.g. RUNNING).
+    void scheduleStatusPoll();
+    void pollOperationStatus();
+    void finishPolledOperation(OpState finalState, bool sendComplete);
+    std::unique_ptr<sdbusplus::Timer> statusPollTimer_;
+    bool statusPollActive_ = false;
+    uint32_t statusPollAttempts_ = 0;
+    // Last RDE OperationStatus reported by the device while polling
+    std::optional<uint8_t> lastDeviceStatus_;
 };
 
 } // namespace pldm::rde

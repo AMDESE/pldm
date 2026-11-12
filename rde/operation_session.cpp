@@ -13,10 +13,16 @@
 
 #include <phosphor-logging/lg2.hpp>
 
+#include <chrono>
+
 PHOSPHOR_LOG2_USING;
 
 constexpr uint32_t maxBufferSize = 64 * 1024;
 constexpr uint8_t CONTAINS_REQ_PAYLOAD = 1;
+
+// RDEOperationStatus polling of an UPDATE that is not completed yet
+constexpr auto statusPollInterval = std::chrono::seconds(1);
+constexpr uint32_t statusPollMaxAttempts = 300;
 
 namespace pldm::rde
 {
@@ -646,6 +652,31 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
                     "RID", currentResourceId_, "ERR", ex.what());
             }
         }
+        if (oipInfo.payload.empty())
+        {
+            info(
+                "RDE: BIOS zero length command response: EID={EID}, OperationID={OID}, CC={CC}, operationStatus={STATUS}",
+                "EID", eid_, "OID", oipInfo.operationID, "CC", cc, "STATUS",
+                rdeOpStatusToString(operationStatus));
+        }
+        if (!multiPartTransferFlag &&
+            operationStatus != PLDM_RDE_OPERATION_COMPLETED)
+        {
+            info(
+                "RDE: UPDATE operationID={OID} status={STATUS} is not completed; polling status",
+                "OID", oipInfo.operationID, "STATUS",
+                rdeOpStatusToString(operationStatus));
+            updateState(OpState::OperationExecuting);
+            statusPollAttempts_ = 0;
+            lastDeviceStatus_ = operationStatus;
+            scheduleStatusPoll();
+            emitTaskUpdatedSignal(
+                dev->getBus(), oipInfo.opTaskPath, "",
+                static_cast<uint16_t>(OpState::OperationExecuting),
+                dev->getManager());
+            return;
+        }
+
         emitTaskUpdatedSignal(
             dev->getBus(), oipInfo.opTaskPath, "",
             static_cast<uint16_t>(OpState::OperationCompleted),
@@ -780,6 +811,188 @@ void OperationSession::addChunk(uint32_t resourceId,
 
     info("RDE: OperationSession addChunk Exit for resourceID={RC}", "RC",
          resourceId);
+}
+
+void OperationSession::scheduleStatusPoll()
+{
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        return;
+    }
+
+    statusPollActive_ = true;
+    if (!statusPollTimer_)
+    {
+        statusPollTimer_ = std::make_unique<sdbusplus::Timer>(
+            dev->getEvent().get(), [this] { pollOperationStatus(); });
+    }
+    statusPollTimer_->start(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            statusPollInterval),
+        false);
+}
+
+void OperationSession::finishPolledOperation(OpState finalState,
+                                             bool sendComplete)
+{
+    statusPollActive_ = false;
+    if (statusPollTimer_ && statusPollTimer_->isRunning())
+    {
+        statusPollTimer_->stop();
+    }
+
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        return;
+    }
+
+    updateState(finalState);
+    info(
+        "RDE: StatusPoll finished for operationID={OID} after {N} polls, device status={DEVSTATUS}, task state={STATE}",
+        "OID", oipInfo.operationID, "N", statusPollAttempts_, "DEVSTATUS",
+        lastDeviceStatus_ ? rdeOpStatusToString(*lastDeviceStatus_)
+                          : std::string("none"),
+        "STATE", opStateToString(static_cast<uint16_t>(finalState)));
+    emitTaskUpdatedSignal(dev->getBus(), oipInfo.opTaskPath,
+                          finalState == OpState::OperationCompleted ? "" : "{}",
+                          static_cast<uint16_t>(currentState_),
+                          dev->getManager());
+
+    // The device rejects RDEOperationComplete while the operation is RUNNING
+    if (!sendComplete)
+    {
+        return;
+    }
+
+    try
+    {
+        doOperationComplete();
+    }
+    catch (const std::exception& e)
+    {
+        error("RDE: RDEOperationComplete failed, operationID={OID}: {ERR}",
+              "OID", oipInfo.operationID, "ERR", e.what());
+    }
+}
+
+void OperationSession::pollOperationStatus()
+{
+    if (!statusPollActive_)
+    {
+        return;
+    }
+
+    auto dev = device_.lock();
+    if (!dev)
+    {
+        return;
+    }
+
+    if (statusPollAttempts_ >= statusPollMaxAttempts)
+    {
+        error(
+            "RDE: StatusPoll operationID={OID} not completed after {N} polls; marking failed",
+            "OID", oipInfo.operationID, "N", statusPollAttempts_);
+        finishPolledOperation(OpState::OperationFailed, false);
+        return;
+    }
+    ++statusPollAttempts_;
+
+    auto instanceIdResult = dev->getInstanceIdDb().next(eid_);
+    if (!instanceIdResult)
+    {
+        error("RDE: Failed to allocate RDEOperationStatus instance ID");
+        scheduleStatusPoll();
+        return;
+    }
+    const auto instanceId = instanceIdResult.value();
+    const auto operationId = oipInfo.operationID;
+
+    Request request(sizeof(pldm_msg_hdr) + PLDM_RDE_OPERATION_STATUS_REQ_BYTES);
+    auto requestMsg = new (request.data()) pldm_msg;
+    const auto rc = encode_rde_operation_status_req(
+        instanceId, currentResourceId_, operationId, requestMsg);
+    if (rc != PLDM_SUCCESS)
+    {
+        dev->getInstanceIdDb().free(eid_, instanceId);
+        scheduleStatusPoll();
+        return;
+    }
+
+    const auto registerRc = dev->getHandler()->registerRequest(
+        eid_, instanceId, PLDM_RDE, PLDM_RDE_OPERATION_STATUS,
+        std::move(request),
+        [this,
+         operationId](uint8_t, const pldm_msg* response, size_t responseLen) {
+            if (!statusPollActive_ || operationId != oipInfo.operationID)
+            {
+                return;
+            }
+            if (response == nullptr || responseLen == 0)
+            {
+                error("RDEOperationStatus response missing, operationID={OID}",
+                      "OID", operationId);
+                scheduleStatusPoll();
+                return;
+            }
+
+            uint8_t completionCode = 0;
+            uint8_t operationStatus = 0;
+            uint8_t completionPercentage = 0;
+            uint32_t completionTimeSeconds = 0;
+            bitfield8_t operationExecutionFlags{};
+            uint32_t resultTransferHandle = 0;
+            bitfield8_t permissionFlags{};
+            uint32_t responsePayloadLength = 0;
+            constexpr uint32_t etagMaxSize = 1024;
+            std::vector<uint8_t> etagBuf(
+                sizeof(pldm_rde_varstring) + etagMaxSize);
+            std::vector<uint8_t> responsePayload(maxBufferSize);
+            const auto decodeRc = decode_rde_operation_status_resp(
+                response, responseLen, &completionCode, &operationStatus,
+                &completionPercentage, &completionTimeSeconds,
+                &operationExecutionFlags, &resultTransferHandle,
+                &permissionFlags, &responsePayloadLength,
+                reinterpret_cast<pldm_rde_varstring*>(etagBuf.data()),
+                responsePayload.data());
+            if (decodeRc != PLDM_SUCCESS || completionCode != PLDM_SUCCESS)
+            {
+                error(
+                    "RDEOperationStatus decode failed, operationID={OID}, rc={RC}, cc={CC}",
+                    "OID", operationId, "RC", decodeRc, "CC", completionCode);
+                scheduleStatusPoll();
+                return;
+            }
+
+            info(
+                "RDEOperationStatus: operationID={OID}, poll={N}, status={STATUS}, completionPercentage={PCT}",
+                "OID", operationId, "N", statusPollAttempts_, "STATUS",
+                rdeOpStatusToString(operationStatus), "PCT",
+                completionPercentage);
+            lastDeviceStatus_ = operationStatus;
+            if (operationStatus == PLDM_RDE_OPERATION_COMPLETED)
+            {
+                finishPolledOperation(OpState::OperationCompleted, true);
+                return;
+            }
+            if (operationStatus == PLDM_RDE_OPERATION_FAILED ||
+                operationStatus == PLDM_RDE_OPERATION_ABANDONED)
+            {
+                finishPolledOperation(OpState::OperationFailed, true);
+                return;
+            }
+            scheduleStatusPoll();
+        });
+    if (registerRc != PLDM_SUCCESS)
+    {
+        dev->getInstanceIdDb().free(eid_, instanceId);
+        error(
+            "RDE: Failed to send RDEOperationStatus, operationID={OID}, RC={RC}",
+            "OID", operationId, "RC", registerRc);
+        scheduleStatusPoll();
+    }
 }
 
 } // namespace pldm::rde
