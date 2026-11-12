@@ -194,6 +194,9 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
      */
     bool getAPCBTokenCache(const OperationInfo& opInfo);
 
+    /** @brief Emit TaskUpdated from a deferred event source */
+    void scheduleTaskSignal(const OperationInfo& opInfo, OpState state);
+
 #endif
 
     /**
@@ -374,11 +377,20 @@ class Device : public EntryIfaces, public std::enable_shared_from_this<Device>
     bool isReplayInProgress_ = false;
     // Replayed operations still polled: operation ID -> cache timestamp
     std::map<uint32_t, uint64_t> polledReplayOps_;
+    // Redfish task paths of the cache entry being replayed / being polled
+    std::vector<std::string> currentReplayTaskPaths_;
+    std::map<uint32_t, std::vector<std::string>> polledReplayTaskPaths_;
+    // Report the final replay result to the original Redfish task(s)
+    void notifyOriginalTasks(std::vector<std::string>& taskPaths,
+                             uint16_t returnCode);
     CacheManagerObject* cacheManager_ = nullptr;
     // Signal match for TaskUpdated to track operation completion
     std::unique_ptr<sdbusplus::bus::match_t> taskUpdatedMatch_;
     // Defer APCB TaskUpdated until after StartRedfishOperation returns to bmcweb
     std::unique_ptr<sdeventplus::source::Defer> deferredApcbTaskSignal_;
+    // Deferred TaskUpdated signals, keyed by operation ID
+    std::map<uint32_t, std::unique_ptr<sdeventplus::source::Defer>>
+        deferredTaskSignals_;
 #endif
     bool shuttingDown_ = false;
 };

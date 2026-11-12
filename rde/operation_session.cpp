@@ -415,9 +415,12 @@ void OperationSession::doOperationInit()
             dev->getInstanceIdDb().free(eid_, instanceId);
             return;
         }
-        if (!dev->isReplayOperation(oipInfo) && dev->canCacheOperation(oipInfo))
+        if (!dev->isReplayOperation(oipInfo) &&
+            dev->canCacheOperation(oipInfo) &&
+            dev->cacheOperation(oipInfo, "failed (init request)"))
         {
-            dev->cacheOperation(oipInfo, "failed (init request)");
+            // Deferred: bmcweb does not know the task yet
+            dev->scheduleTaskSignal(oipInfo, OpState::OperationQueued);
         }
 #endif
         updateState(OpState::OperationFailed);
@@ -457,9 +460,14 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
         {
             return;
         }
-        if (!dev->isReplayOperation(oipInfo) && dev->canCacheOperation(oipInfo))
+        if (!dev->isReplayOperation(oipInfo) &&
+            dev->canCacheOperation(oipInfo) &&
+            dev->cacheOperation(oipInfo, "failed (NULL PLDM response)"))
         {
-            dev->cacheOperation(oipInfo, "failed (NULL PLDM response)");
+            emitTaskUpdatedSignal(
+                dev->getBus(), oipInfo.opTaskPath, "{}",
+                static_cast<uint16_t>(OpState::OperationQueued),
+                dev->getManager());
         }
 #endif
         updateState(OpState::OperationFailed);
@@ -509,15 +517,19 @@ void OperationSession::handleOperationInitResp(const pldm_msg* respMsg,
             "Failed to decode handleOperationInitResp response rc:{RC} cc:{CC}",
             "RC", rc, "CC", cc);
         logCompletionCodeError(cc);
+        // Cached for replay on the next host boot: queued, not failed
+        OpState taskState = OpState::OperationFailed;
 #ifdef OEM_AMD
-        if (!dev->isReplayOperation(oipInfo) && dev->canCacheOperation(oipInfo))
+        if (!dev->isReplayOperation(oipInfo) &&
+            dev->canCacheOperation(oipInfo) &&
+            dev->cacheOperation(oipInfo, "failed (decode/cc error)"))
         {
-            dev->cacheOperation(oipInfo, "failed (decode/cc error)");
+            taskState = OpState::OperationQueued;
         }
 #endif
         updateState(OpState::OperationFailed);
         emitTaskUpdatedSignal(dev->getBus(), oipInfo.opTaskPath, "{}",
-                              static_cast<uint16_t>(OpState::OperationFailed),
+                              static_cast<uint16_t>(taskState),
                               dev->getManager());
         return;
     }
@@ -977,10 +989,14 @@ void OperationSession::pollOperationStatus()
                 finishPolledOperation(OpState::OperationCompleted, true);
                 return;
             }
-            if (operationStatus == PLDM_RDE_OPERATION_FAILED ||
-                operationStatus == PLDM_RDE_OPERATION_ABANDONED)
+            if (operationStatus == PLDM_RDE_OPERATION_FAILED)
             {
                 finishPolledOperation(OpState::OperationFailed, true);
+                return;
+            }
+            if (operationStatus == PLDM_RDE_OPERATION_ABANDONED)
+            {
+                finishPolledOperation(OpState::Cancelled, true);
                 return;
             }
             scheduleStatusPoll();

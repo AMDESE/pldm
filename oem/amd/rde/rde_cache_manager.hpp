@@ -37,6 +37,8 @@ struct CacheEntry
     std::string sessionId;
     uint64_t timestamp;  // Cache creation timestamp
     CacheStatus status = CacheStatus::Pending;
+    // Task paths of the requests merged into this entry
+    std::vector<std::string> taskPaths;
 
     CacheEntry() = default;
     CacheEntry(const std::string& uuid, OperationType opType,

@@ -35,6 +35,7 @@ bool RDECacheManager::cacheOperation(const OperationInfo& opInfo)
                 jExisting.update(jNew);
 
                 entry.payload = jExisting.dump();
+                entry.taskPaths.push_back(opInfo.opTaskPath);
                 entry.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
                                       std::chrono::system_clock::now().time_since_epoch())
                                       .count();
@@ -56,6 +57,7 @@ bool RDECacheManager::cacheOperation(const OperationInfo& opInfo)
                          opInfo.targetURI, opInfo.payload,
                          opInfo.payloadFormat, opInfo.encodingType,
                          opInfo.sessionId);
+        entry.taskPaths.push_back(opInfo.opTaskPath);
         deviceCache.push_back(std::move(entry));
 
         info(
