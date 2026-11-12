@@ -164,7 +164,9 @@ bool Device::shouldDeferOperation(const OperationInfo& oipInfo)
     {
         if (canCacheOperation(oipInfo))
         {
-            cacheOperation(oipInfo, "during replay");
+            scheduleTaskSignal(oipInfo, cacheOperation(oipInfo, "during replay")
+                                            ? OpState::OperationQueued
+                                            : OpState::OperationFailed);
             return true; // Indicate that it has been deferred
         }
     }
@@ -234,6 +236,49 @@ bool Device::getAPCBTokenCache(
         "RDE: Scheduling APCBDataTable Token GET response for UUID={UUID}, OID={OID}",
         "UUID", deviceUUID(), "OID", opInfo.operationID);
     return true;
+}
+
+void Device::notifyOriginalTasks(std::vector<std::string>& taskPaths,
+                                 uint16_t returnCode)
+{
+    for (const auto& taskPath : taskPaths)
+    {
+        info(
+            "RDE Cache Replay: Reporting replay result {CODE} to original task {PATH}",
+            "CODE", opStateToString(returnCode), "PATH", taskPath);
+        emitTaskUpdatedSignal(
+            bus_, taskPath,
+            returnCode == static_cast<uint16_t>(OpState::OperationCompleted)
+                ? ""
+                : "{}",
+            returnCode, manager_);
+    }
+    taskPaths.clear();
+}
+
+void Device::scheduleTaskSignal(const OperationInfo& opInfo, OpState state)
+{
+    std::weak_ptr<Device> weakSelf = weak_from_this();
+    const uint32_t operationID = opInfo.operationID;
+    const std::string taskPath = opInfo.opTaskPath;
+    const auto code = static_cast<uint16_t>(state);
+
+    deferredTaskSignals_[operationID] =
+        std::make_unique<sdeventplus::source::Defer>(
+            event_, [weakSelf, operationID, taskPath,
+                     code](sdeventplus::source::EventBase&) {
+                auto self = weakSelf.lock();
+                if (!self)
+                {
+                    return;
+                }
+                const std::string path = taskPath;
+                const uint16_t returnCode = code;
+                // Keep this source alive until the callback returns.
+                auto node = self->deferredTaskSignals_.extract(operationID);
+                emitTaskUpdatedSignal(self->bus_, path, "{}", returnCode,
+                                      self->getManager());
+            });
 }
 
 bool Device::isReplayOperation(const OperationInfo& opInfo) const
@@ -363,6 +408,9 @@ void Device::replayCachedOperations()
                     info(
                         "RDE Cache Replay: Polled operation {OID} finished with TaskStatus={CODE}",
                         "OID", pIt->first, "CODE", opStateToString(code));
+                    self->notifyOriginalTasks(
+                        self->polledReplayTaskPaths_[pIt->first], code);
+                    self->polledReplayTaskPaths_.erase(pIt->first);
                     self->polledReplayOps_.erase(pIt);
                     return;
                 }
@@ -406,6 +454,8 @@ void Device::replayCachedOperations()
                     info(
                         "RDE Cache Replay: Operation {OID} succeeded (TaskStatus=OperationCompleted), cache entry removed, processing next operation",
                         "OID", self->currentReplayOperationId_);
+                    self->notifyOriginalTasks(self->currentReplayTaskPaths_,
+                                              returnCode);
 
                     self->currentReplayOperationId_ = 0;
                     self->processNextCachedOperation();
@@ -427,6 +477,8 @@ void Device::replayCachedOperations()
                         "RDE Cache Replay: Operation {OID} failed with TaskStatus={CODE}, marked as failed, processing next operation",
                         "OID", self->currentReplayOperationId_, "CODE",
                         returnCode);
+                    self->notifyOriginalTasks(self->currentReplayTaskPaths_,
+                                              returnCode);
 
                     self->currentReplayOperationId_ = 0;
                     self->processNextCachedOperation();
@@ -438,6 +490,19 @@ void Device::replayCachedOperations()
                     // releases boot; the status poll reports the final result.
                     self->polledReplayOps_[self->currentReplayOperationId_] =
                         self->currentReplayTimestamp_;
+                    for (const auto& taskPath : self->currentReplayTaskPaths_)
+                    {
+                        info(
+                            "RDE Cache Replay: Reporting replay status {CODE} to original task {PATH}",
+                            "CODE", opStateToString(returnCode), "PATH",
+                            taskPath);
+                        emitTaskUpdatedSignal(self->bus_, taskPath, "{}",
+                                              returnCode, self->manager_);
+                    }
+                    self->polledReplayTaskPaths_
+                        [self->currentReplayOperationId_] =
+                        std::move(self->currentReplayTaskPaths_);
+                    self->currentReplayTaskPaths_.clear();
                     info(
                         "RDE Cache Replay: Operation {OID} accepted (RUNNING), status polled in background, processing next operation",
                         "OID", self->currentReplayOperationId_);
@@ -480,6 +545,7 @@ void Device::processNextCachedOperation()
 
     CacheEntry entry = *entryOpt;
     currentReplayTimestamp_ = entry.timestamp;
+    currentReplayTaskPaths_ = entry.taskPaths;
 
     info(
         "RDE Cache Replay: Replaying operation type={TYPE}, URI={URI}, payload={PAYLOAD}, timestamp={TS}",
@@ -530,6 +596,8 @@ void Device::processNextCachedOperation()
 
         // Mark failed-to-start operation as complete so we can move to next
         cacheManager.completeOperation(deviceUUID(), currentReplayTimestamp_);
+        notifyOriginalTasks(currentReplayTaskPaths_,
+                            static_cast<uint16_t>(OpState::OperationFailed));
         currentReplayOperationId_ = 0;
         currentReplayTimestamp_ = 0;
         processNextCachedOperation();
